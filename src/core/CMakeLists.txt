@@ -11,16 +11,8 @@
 #
 include (GenerateExportHeader)
 
-FUNCTION(PREPEND var prefix)
-   SET(listVar "")
-   FOREACH(f ${ARGN})
-      LIST(APPEND listVar "${prefix}/${f}")
-   ENDFOREACH(f)
-   SET(${var} "${listVar}" PARENT_SCOPE)
-ENDFUNCTION(PREPEND)
-
 if (BUILD_SHARED_LIBS OR NOT DEFINED BUILD_SHARED_LIBS)
-  add_library(ddsc SHARED)
+  add_library(ddsc SHARED "")
 else()
   add_library(ddsc)
 endif()
@@ -44,7 +36,7 @@ include(ddsi/CMakeLists.txt)
 include(ddsc/CMakeLists.txt)
 
 add_coverage(ddsc)
-target_link_libraries(ddsc PRIVATE ddsrt)
+target_link_libraries(ddsc PRIVATE "$<BUILD_INTERFACE:ddsrt>")
 target_compile_definitions(
   ddsc PUBLIC
   $<BUILD_INTERFACE:$<TARGET_PROPERTY:ddsrt,INTERFACE_COMPILE_DEFINITIONS>>)
@@ -67,6 +59,13 @@ install(
   LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}" COMPONENT lib
   ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}" COMPONENT lib
 )
+if (MSVC)
+  install(FILES $<TARGET_PDB_FILE:ddsc>
+    DESTINATION "${CMAKE_INSTALL_BINDIR}"
+    COMPONENT dev
+    OPTIONAL
+  )
+endif()
 
 if(BUILD_IDLC)
   add_subdirectory(xtests)
@@ -75,6 +74,7 @@ endif()
 if(BUILD_DOCS)
   set(DOXYGEN_GENERATE_HTML NO)
   set(DOXYGEN_GENERATE_XML YES)
+  set(DOXYGEN_STRIP_FROM_PATH "ddsc/include/dds/")
   set(DOXYGEN_EXCLUDE_PATTERNS "*/tests/*")
   set(DOXYGEN_MACRO_EXPANSION YES)
   set(DOXYGEN_PREDEFINED
@@ -85,5 +85,5 @@ if(BUILD_DOCS)
     "DDS_DEPRECATED_EXPORT="
     "DDSRT_STATIC_ASSERT(x)=")
   find_package(Doxygen REQUIRED)
-  doxygen_add_docs(ddsc_api_docs "ddsc/include")
+  doxygen_add_docs(ddsc_api_docs "ddsc/include/dds/")
 endif()

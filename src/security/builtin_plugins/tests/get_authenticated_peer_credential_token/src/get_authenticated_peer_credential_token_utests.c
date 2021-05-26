@@ -880,7 +880,8 @@ CU_Init(ddssec_builtin_get_authenticated_peer_credential)
     /* Only need the authentication plugin. */
     g_plugins = load_plugins(NULL   /* Access Control */,
                              &g_auth  /* Authentication */,
-                             NULL   /* Cryptograpy    */);
+                             NULL   /* Cryptograpy    */,
+                             &(const struct ddsi_domaingv){ .handshake_include_optional = true });
     if (g_plugins) {
         result = validate_local_identity();
         if (result >= 0) {
@@ -1430,6 +1431,7 @@ CU_Test(ddssec_builtin_get_authenticated_peer_credential,token_after_request )
 
     c_id = find_property(&credential_token, "c.id");
     CU_ASSERT_FATAL(c_id != NULL);
+    assert(c_id); // for GCC's static analyzer
     CU_ASSERT_FATAL(c_id->value != NULL);
     assert(c_id && c_id->value); // for Clang's static analyzer
     //printf("c_id->value: %s\n", c_id->value);
@@ -1560,6 +1562,7 @@ CU_Test(ddssec_builtin_get_authenticated_peer_credential,token_after_reply )
 
     c_id = find_property(&credential_token, "c.id");
     CU_ASSERT_FATAL(c_id != NULL);
+    assert(c_id); // for GCC's static analyzer
     CU_ASSERT_FATAL(c_id->value != NULL);
     assert(c_id && c_id->value); // for Clang's static analyzer
     //printf("c_id->value: %s\n", c_id->value);

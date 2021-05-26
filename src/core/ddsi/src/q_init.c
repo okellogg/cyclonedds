@@ -50,6 +50,7 @@
 #include "dds/ddsi/q_init.h"
 #include "dds/ddsi/ddsi_threadmon.h"
 #include "dds/ddsi/ddsi_pmd.h"
+#include "dds/ddsi/ddsi_typelookup.h"
 
 #include "dds/ddsi/ddsi_tran.h"
 #include "dds/ddsi/ddsi_udp.h"
@@ -138,7 +139,7 @@ static void make_builtin_endpoint_xqos (dds_qos_t *q, const dds_qos_t *template)
   q->durability.kind = DDS_DURABILITY_TRANSIENT_LOCAL;
 }
 
-#ifdef DDSI_INCLUDE_SECURITY
+#if defined (DDS_HAS_TYPE_DISCOVERY) || defined (DDS_HAS_SECURITY)
 static void make_builtin_volatile_endpoint_xqos (dds_qos_t *q, const dds_qos_t *template)
 {
   ddsi_xqos_copy (q, template);
@@ -147,7 +148,9 @@ static void make_builtin_volatile_endpoint_xqos (dds_qos_t *q, const dds_qos_t *
   q->durability.kind = DDS_DURABILITY_VOLATILE;
   q->history.kind = DDS_HISTORY_KEEP_ALL;
 }
+#endif
 
+#ifdef DDS_HAS_SECURITY
 static void add_property_to_xqos(dds_qos_t *q, const char *name, const char *value)
 {
   assert(!(q->present & QP_PROPERTY_LIST));
@@ -328,7 +331,7 @@ static int set_spdp_address (struct ddsi_domaingv *gv)
     rc = string_to_default_locator (gv, &gv->loc_spdp_mc, gv->m_factory->m_default_spdp_address, port, 1, "SPDP address");
     assert (rc > 0);
   }
-#ifdef DDSI_INCLUDE_SSM
+#ifdef DDS_HAS_SSM
   if (gv->loc_spdp_mc.kind != NN_LOCATOR_KIND_INVALID && ddsi_is_ssm_mcaddr (gv, &gv->loc_spdp_mc))
   {
     GVERROR ("%s: SPDP address may not be an SSM address\n", gv->config.spdpMulticastAddressString);
@@ -388,7 +391,7 @@ static int set_ext_address_and_mask (struct ddsi_domaingv *gv)
   return 0;
 }
 
-#ifdef DDSI_INCLUDE_NETWORK_CHANNELS
+#ifdef DDS_HAS_NETWORK_CHANNELS
 static int known_channel_p (const struct ddsi_domaingv *gv, const char *name)
 {
   const struct ddsi_config_channel_listelem *c;
@@ -401,7 +404,7 @@ static int known_channel_p (const struct ddsi_domaingv *gv, const char *name)
 
 static int check_thread_properties (const struct ddsi_domaingv *gv)
 {
-#ifdef DDSI_INCLUDE_NETWORK_CHANNELS
+#ifdef DDS_HAS_NETWORK_CHANNELS
   static const char *fixed[] = { "recv", "tev", "gc", "lease", "dq.builtins", "debmon", "fsm", NULL };
   static const char *chanprefix[] = { "xmit.", "tev.","dq.",NULL };
 #else
@@ -416,7 +419,7 @@ static int check_thread_properties (const struct ddsi_domaingv *gv)
         break;
     if (fixed[i] == NULL)
     {
-#ifdef DDSI_INCLUDE_NETWORK_CHANNELS
+#ifdef DDS_HAS_NETWORK_CHANNELS
       /* Some threads are named after the channel, with names of the form PREFIX.CHAN */
 
       for (i = 0; chanprefix[i]; i++)
@@ -433,7 +436,7 @@ static int check_thread_properties (const struct ddsi_domaingv *gv)
 #else
       DDS_ILOG (DDS_LC_ERROR, gv->config.domainId, "config: DDSI2Service/Threads/Thread[@name=\"%s\"]: unknown thread\n", e->name);
       ok = 0;
-#endif /* DDSI_INCLUDE_NETWORK_CHANNELS */
+#endif /* DDS_HAS_NETWORK_CHANNELS */
     }
   }
   return ok;
@@ -477,7 +480,7 @@ int rtps_config_open_trace (struct ddsi_domaingv *gv)
 
 int rtps_config_prep (struct ddsi_domaingv *gv, struct cfgst *cfgst)
 {
-#ifdef DDSI_INCLUDE_NETWORK_CHANNELS
+#ifdef DDS_HAS_NETWORK_CHANNELS
   unsigned num_channels = 0;
   unsigned num_channel_threads = 0;
 #endif
@@ -541,7 +544,7 @@ int rtps_config_prep (struct ddsi_domaingv *gv, struct cfgst *cfgst)
   }
   if (gv->config.max_queued_rexmit_bytes == 0)
   {
-#ifdef DDSI_INCLUDE_BANDWIDTH_LIMITING
+#ifdef DDS_HAS_BANDWIDTH_LIMITING
     if (gv->config.auxiliary_bandwidth_limit == 0)
       gv->config.max_queued_rexmit_bytes = 2147483647u;
     else
@@ -556,7 +559,7 @@ int rtps_config_prep (struct ddsi_domaingv *gv, struct cfgst *cfgst)
     }
 #else
     gv->config.max_queued_rexmit_bytes = 2147483647u;
-#endif /* DDSI_INCLUDE_BANDWIDTH_LIMITING */
+#endif /* DDS_HAS_BANDWIDTH_LIMITING */
   }
 
   /* Verify thread properties refer to defined threads */
@@ -565,7 +568,7 @@ int rtps_config_prep (struct ddsi_domaingv *gv, struct cfgst *cfgst)
     goto err_config_late_error;
   }
 
-#ifdef DDSI_INCLUDE_NETWORK_CHANNELS
+#ifdef DDS_HAS_NETWORK_CHANNELS
   {
     /* Determine number of configured channels to be able to
      determine the correct number of threads.  Also fix fields if
@@ -590,7 +593,7 @@ int rtps_config_prep (struct ddsi_domaingv *gv, struct cfgst *cfgst)
       }
 
       if (
-#ifdef DDSI_INCLUDE_BANDWIDTH_LIMITING
+#ifdef DDS_HAS_BANDWIDTH_LIMITING
           chptr->auxiliary_bandwidth_limit > 0 ||
 #endif
           lookup_thread_properties (thread_name))
@@ -602,7 +605,7 @@ int rtps_config_prep (struct ddsi_domaingv *gv, struct cfgst *cfgst)
     if (error)
       goto err_config_late_error;
   }
-#endif /* DDSI_INCLUDE_NETWORK_CHANNELS */
+#endif /* DDS_HAS_NETWORK_CHANNELS */
 
   /* Open tracing file after all possible config errors have been printed */
   if (! rtps_config_open_trace (gv))
@@ -621,7 +624,7 @@ int rtps_config_prep (struct ddsi_domaingv *gv, struct cfgst *cfgst)
   */
 #define USER_MAX_THREADS 50
 
-#ifdef DDSI_INCLUDE_NETWORK_CHANNELS
+#ifdef DDS_HAS_NETWORK_CHANNELS
     const unsigned max_threads = 9 + USER_MAX_THREADS + num_channel_threads + gv->config.ddsi2direct_max_threads;
 #else
     const unsigned max_threads = 11 + USER_MAX_THREADS + gv->config.ddsi2direct_max_threads;
@@ -661,7 +664,7 @@ static void joinleave_spdp_defmcip_helper (const ddsi_locator_t *loc, void *varg
   struct joinleave_spdp_defmcip_helper_arg *arg = varg;
   if (!ddsi_is_mcaddr (arg->gv, loc))
     return;
-#ifdef DDSI_INCLUDE_SSM
+#ifdef DDS_HAS_SSM
   /* Can't join SSM until we actually have a source */
   if (ddsi_is_ssm_mcaddr (arg->gv, loc))
     return;
@@ -800,80 +803,103 @@ static void wait_for_receive_threads (struct ddsi_domaingv *gv)
   }
 }
 
-static struct ddsi_sertopic *make_special_topic_pserop (const char *name, const char *typename, size_t memsize, size_t nops, const enum pserop *ops, size_t nops_key, const enum pserop *ops_key)
+static struct ddsi_sertype *make_special_type_pserop (const char *typename, size_t memsize, size_t nops, const enum pserop *ops, size_t nops_key, const enum pserop *ops_key)
 {
-  struct ddsi_sertopic_pserop *st = ddsrt_malloc (sizeof (*st));
+  struct ddsi_sertype_pserop *st = ddsrt_malloc (sizeof (*st));
   memset (st, 0, sizeof (*st));
-  ddsi_sertopic_init (&st->c, name, typename, &ddsi_sertopic_ops_pserop, &ddsi_serdata_ops_pserop, nops_key == 0);
+  ddsi_sertype_init (&st->c, typename, &ddsi_sertype_ops_pserop, &ddsi_serdata_ops_pserop, nops_key == 0);
   st->native_encoding_identifier = (DDSRT_ENDIAN == DDSRT_LITTLE_ENDIAN) ? CDR_LE : CDR_BE;
   st->memsize = memsize;
   st->nops = nops;
   st->ops = ops;
   st->nops_key = nops_key;
   st->ops_key = ops_key;
-  return (struct ddsi_sertopic *) st;
+  return (struct ddsi_sertype *) st;
 }
 
-static struct ddsi_sertopic *make_special_topic_plist (const char *name, const char *typename, nn_parameterid_t keyparam)
+static struct ddsi_sertype *make_special_type_plist (const char *typename, nn_parameterid_t keyparam)
 {
-  struct ddsi_sertopic_plist *st = ddsrt_malloc (sizeof (*st));
+  struct ddsi_sertype_plist *st = ddsrt_malloc (sizeof (*st));
   memset (st, 0, sizeof (*st));
-  ddsi_sertopic_init (&st->c, name, typename, &ddsi_sertopic_ops_plist, &ddsi_serdata_ops_plist, false);
+  ddsi_sertype_init (&st->c, typename, &ddsi_sertype_ops_plist, &ddsi_serdata_ops_plist, false);
   st->native_encoding_identifier = (DDSRT_ENDIAN == DDSRT_LITTLE_ENDIAN) ? PL_CDR_LE : PL_CDR_BE;
   st->keyparam = keyparam;
-  return (struct ddsi_sertopic *) st;
+  return (struct ddsi_sertype *) st;
 }
 
-static void free_special_topics (struct ddsi_domaingv *gv)
+static void free_special_types (struct ddsi_domaingv *gv)
 {
-#ifdef DDSI_INCLUDE_SECURITY
-  ddsi_sertopic_unref (gv->pgm_volatile_topic);
-  ddsi_sertopic_unref (gv->pgm_stateless_topic);
-  ddsi_sertopic_unref (gv->pmd_secure_topic);
-  ddsi_sertopic_unref (gv->spdp_secure_topic);
-  ddsi_sertopic_unref (gv->sedp_reader_secure_topic);
-  ddsi_sertopic_unref (gv->sedp_writer_secure_topic);
+#ifdef DDS_HAS_SECURITY
+  ddsi_sertype_unref (gv->pgm_volatile_type);
+  ddsi_sertype_unref (gv->pgm_stateless_type);
+  ddsi_sertype_unref (gv->pmd_secure_type);
+  ddsi_sertype_unref (gv->spdp_secure_type);
+  ddsi_sertype_unref (gv->sedp_reader_secure_type);
+  ddsi_sertype_unref (gv->sedp_writer_secure_type);
 #endif
-  ddsi_sertopic_unref (gv->pmd_topic);
-  ddsi_sertopic_unref (gv->spdp_topic);
-  ddsi_sertopic_unref (gv->sedp_reader_topic);
-  ddsi_sertopic_unref (gv->sedp_writer_topic);
+#ifdef DDS_HAS_TOPIC_DISCOVERY
+  if (gv->config.enable_topic_discovery_endpoints)
+    ddsi_sertype_unref (gv->sedp_topic_type);
+#endif
+#ifdef DDS_HAS_TYPE_DISCOVERY
+  ddsi_sertype_unref (gv->tl_svc_request_type);
+  ddsi_sertype_unref (gv->tl_svc_reply_type);
+#endif
+  ddsi_sertype_unref (gv->pmd_type);
+  ddsi_sertype_unref (gv->spdp_type);
+  ddsi_sertype_unref (gv->sedp_reader_type);
+  ddsi_sertype_unref (gv->sedp_writer_type);
 }
 
-static void make_special_topics (struct ddsi_domaingv *gv)
+static void make_special_types (struct ddsi_domaingv *gv)
 {
-  gv->spdp_topic = make_special_topic_plist ("DCPSParticipant", "ParticipantBuiltinTopicData", PID_PARTICIPANT_GUID);
-  gv->sedp_reader_topic = make_special_topic_plist ("DCPSSubscription", "SubscriptionBuiltinTopicData", PID_ENDPOINT_GUID);
-  gv->sedp_writer_topic = make_special_topic_plist ("DCPSPublication", "PublicationBuiltinTopicData", PID_ENDPOINT_GUID);
-  gv->pmd_topic = make_special_topic_pserop ("DCPSParticipantMessage", "ParticipantMessageData", sizeof (ParticipantMessageData_t), participant_message_data_nops, participant_message_data_ops, participant_message_data_nops_key, participant_message_data_ops_key);
-
-#ifdef DDSI_INCLUDE_SECURITY
-  gv->spdp_secure_topic = make_special_topic_plist ("DCPSParticipantsSecure", "ParticipantBuiltinTopicDataSecure", PID_PARTICIPANT_GUID);
-  gv->sedp_reader_secure_topic = make_special_topic_plist ("DCPSSubscriptionsSecure", "SubscriptionBuiltinTopicDataSecure", PID_ENDPOINT_GUID);
-  gv->sedp_writer_secure_topic = make_special_topic_plist ("DCPSPublicationsSecure", "PublicationBuiltinTopicDataSecure", PID_ENDPOINT_GUID);
-  gv->pmd_secure_topic = make_special_topic_pserop ("DCPSParticipantMessageSecure", "ParticipantMessageDataSecure", sizeof (ParticipantMessageData_t), participant_message_data_nops, participant_message_data_ops, participant_message_data_nops_key, participant_message_data_ops_key);
-  gv->pgm_stateless_topic = make_special_topic_pserop ("DCPSParticipantStatelessMessage", "ParticipantStatelessMessage", sizeof (nn_participant_generic_message_t), pserop_participant_generic_message_nops, pserop_participant_generic_message, 0, NULL);
-  gv->pgm_volatile_topic = make_special_topic_pserop ("DCPSParticipantVolatileMessageSecure", "ParticipantVolatileMessageSecure", sizeof (nn_participant_generic_message_t), pserop_participant_generic_message_nops, pserop_participant_generic_message, 0, NULL);
+  gv->spdp_type = make_special_type_plist ("ParticipantBuiltinTopicData", PID_PARTICIPANT_GUID);
+  gv->sedp_reader_type = make_special_type_plist ("SubscriptionBuiltinTopicData", PID_ENDPOINT_GUID);
+  gv->sedp_writer_type = make_special_type_plist ("PublicationBuiltinTopicData", PID_ENDPOINT_GUID);
+  gv->pmd_type = make_special_type_pserop ("ParticipantMessageData", sizeof (ParticipantMessageData_t), participant_message_data_nops, participant_message_data_ops, participant_message_data_nops_key, participant_message_data_ops_key);
+#ifdef DDS_HAS_TYPE_DISCOVERY
+  gv->tl_svc_request_type = make_special_type_pserop ("TypeLookup_Request", sizeof (type_lookup_request_t), typelookup_service_request_nops, typelookup_service_request_ops, 0, NULL);
+  gv->tl_svc_reply_type = make_special_type_pserop ("TypeLookup_Reply", sizeof (type_lookup_reply_t), typelookup_service_reply_nops, typelookup_service_reply_ops, 0, NULL);
+#endif
+#ifdef DDS_HAS_TOPIC_DISCOVERY
+  if (gv->config.enable_topic_discovery_endpoints)
+    gv->sedp_topic_type = make_special_type_plist ("TopicBuiltinTopicData", PID_CYCLONE_TOPIC_GUID);
+#endif
+#ifdef DDS_HAS_SECURITY
+  gv->spdp_secure_type = make_special_type_plist ("ParticipantBuiltinTopicDataSecure", PID_PARTICIPANT_GUID);
+  gv->sedp_reader_secure_type = make_special_type_plist ("SubscriptionBuiltinTopicDataSecure", PID_ENDPOINT_GUID);
+  gv->sedp_writer_secure_type = make_special_type_plist ("PublicationBuiltinTopicDataSecure", PID_ENDPOINT_GUID);
+  gv->pmd_secure_type = make_special_type_pserop ("ParticipantMessageDataSecure", sizeof (ParticipantMessageData_t), participant_message_data_nops, participant_message_data_ops, participant_message_data_nops_key, participant_message_data_ops_key);
+  gv->pgm_stateless_type = make_special_type_pserop ("ParticipantStatelessMessage", sizeof (nn_participant_generic_message_t), pserop_participant_generic_message_nops, pserop_participant_generic_message, 0, NULL);
+  gv->pgm_volatile_type = make_special_type_pserop ("ParticipantVolatileMessageSecure", sizeof (nn_participant_generic_message_t), pserop_participant_generic_message_nops, pserop_participant_generic_message, 0, NULL);
 #endif
 
-  ddsrt_mutex_lock (&gv->sertopics_lock);
-  ddsi_sertopic_register_locked (gv, gv->spdp_topic);
-  ddsi_sertopic_register_locked (gv, gv->sedp_reader_topic);
-  ddsi_sertopic_register_locked (gv, gv->sedp_writer_topic);
-  ddsi_sertopic_register_locked (gv, gv->pmd_topic);
-#ifdef DDSI_INCLUDE_SECURITY
-  ddsi_sertopic_register_locked (gv, gv->spdp_secure_topic);
-  ddsi_sertopic_register_locked (gv, gv->sedp_reader_secure_topic);
-  ddsi_sertopic_register_locked (gv, gv->sedp_writer_secure_topic);
-  ddsi_sertopic_register_locked (gv, gv->pmd_secure_topic);
-  ddsi_sertopic_register_locked (gv, gv->pgm_stateless_topic);
-  ddsi_sertopic_register_locked (gv, gv->pgm_volatile_topic);
+  ddsrt_mutex_lock (&gv->sertypes_lock);
+  ddsi_sertype_register_locked (gv, gv->spdp_type);
+  ddsi_sertype_register_locked (gv, gv->sedp_reader_type);
+  ddsi_sertype_register_locked (gv, gv->sedp_writer_type);
+  ddsi_sertype_register_locked (gv, gv->pmd_type);
+#ifdef DDS_HAS_TYPE_DISCOVERY
+  ddsi_sertype_register_locked (gv, gv->tl_svc_request_type);
+  ddsi_sertype_register_locked (gv, gv->tl_svc_reply_type);
 #endif
-  ddsrt_mutex_unlock (&gv->sertopics_lock);
+#ifdef DDS_HAS_TOPIC_DISCOVERY
+  if (gv->config.enable_topic_discovery_endpoints)
+    ddsi_sertype_register_locked (gv, gv->sedp_topic_type);
+#endif
+#ifdef DDS_HAS_SECURITY
+  ddsi_sertype_register_locked (gv, gv->spdp_secure_type);
+  ddsi_sertype_register_locked (gv, gv->sedp_reader_secure_type);
+  ddsi_sertype_register_locked (gv, gv->sedp_writer_secure_type);
+  ddsi_sertype_register_locked (gv, gv->pmd_secure_type);
+  ddsi_sertype_register_locked (gv, gv->pgm_stateless_type);
+  ddsi_sertype_register_locked (gv, gv->pgm_volatile_type);
+#endif
+  ddsrt_mutex_unlock (&gv->sertypes_lock);
 
   /* register increments refcount (which is reasonable), but at some point
      one needs to get rid of that reference */
-  free_special_topics (gv);
+  free_special_types (gv);
 }
 
 static bool use_multiple_receive_threads (const struct ddsi_config *cfg)
@@ -986,15 +1012,37 @@ fail:
   return -1;
 }
 
-static int ddsi_sertopic_equal_wrap (const void *a, const void *b)
+static int ddsi_sertype_equal_wrap (const void *a, const void *b)
 {
-  return ddsi_sertopic_equal (a, b);
+  return ddsi_sertype_equal (a, b);
 }
 
-static uint32_t ddsi_sertopic_hash_wrap (const void *tp)
+static uint32_t ddsi_sertype_hash_wrap (const void *tp)
 {
-  return ddsi_sertopic_hash (tp);
+  return ddsi_sertype_hash (tp);
 }
+
+#ifdef DDS_HAS_TYPE_DISCOVERY
+static int tl_meta_equal_wrap (const void *tlm_a, const void *tlm_b)
+{
+  return ddsi_tl_meta_equal (tlm_a, tlm_b);
+}
+static uint32_t tl_meta_hash_wrap (const void *tlm)
+{
+  return ddsi_tl_meta_hash (tlm);
+}
+#endif /* DDS_HAS_TYPE_DISCOVERY */
+
+#ifdef DDS_HAS_TOPIC_DISCOVERY
+static int topic_definition_equal_wrap (const void *tpd_a, const void *tpd_b)
+{
+  return topic_definition_equal (tpd_a, tpd_b);
+}
+static uint32_t topic_definition_hash_wrap (const void *tpd)
+{
+  return topic_definition_hash (tpd);
+}
+#endif /* DDS_HAS_TYPE_DISCOVERY */
 
 static void reset_deaf_mute (struct xevent *xev, void *varg, UNUSED_ARG (ddsrt_mtime_t tnow))
 {
@@ -1161,7 +1209,7 @@ int rtps_init (struct ddsi_domaingv *gv)
     GVLOG (DDS_LC_CONFIG, "extmask: %s%s\n", ddsi_locator_to_string_no_port (buf, sizeof(buf), &gv->extmask), gv->m_factory->m_kind != NN_LOCATOR_KIND_UDPv4 ? " (not applicable)" : "");
     GVLOG (DDS_LC_CONFIG, "SPDP MC: %s\n", ddsi_locator_to_string_no_port (buf, sizeof(buf), &gv->loc_spdp_mc));
     GVLOG (DDS_LC_CONFIG, "default MC: %s\n", ddsi_locator_to_string_no_port (buf, sizeof(buf), &gv->loc_default_mc));
-#ifdef DDSI_INCLUDE_SSM
+#ifdef DDS_HAS_SSM
     GVLOG (DDS_LC_CONFIG, "SSM support included\n");
 #endif
   }
@@ -1169,7 +1217,7 @@ int rtps_init (struct ddsi_domaingv *gv)
   if (gv->ownloc.kind != gv->extloc.kind)
     DDS_FATAL ("mismatch between network address kinds\n");
 
-#ifdef DDSI_INCLUDE_NETWORK_PARTITIONS
+#ifdef DDS_HAS_NETWORK_PARTITIONS
   /* Convert address sets in partition mappings from string to address sets */
   {
     const uint32_t port = ddsi_get_port (&gv->config, DDSI_PORT_MULTI_DATA, 0);
@@ -1207,9 +1255,13 @@ int rtps_init (struct ddsi_domaingv *gv)
   assert (gv->spdp_endpoint_xqos.reliability.kind == DDS_RELIABILITY_BEST_EFFORT);
   make_builtin_endpoint_xqos (&gv->builtin_endpoint_xqos_rd, &gv->default_xqos_rd);
   make_builtin_endpoint_xqos (&gv->builtin_endpoint_xqos_wr, &gv->default_xqos_wr);
-#ifdef DDSI_INCLUDE_SECURITY
+#ifdef DDS_HAS_TYPE_DISCOVERY
   make_builtin_volatile_endpoint_xqos(&gv->builtin_volatile_xqos_rd, &gv->default_xqos_rd);
   make_builtin_volatile_endpoint_xqos(&gv->builtin_volatile_xqos_wr, &gv->default_xqos_wr);
+#endif
+#ifdef DDS_HAS_SECURITY
+  make_builtin_volatile_endpoint_xqos(&gv->builtin_secure_volatile_xqos_rd, &gv->default_xqos_rd);
+  make_builtin_volatile_endpoint_xqos(&gv->builtin_secure_volatile_xqos_wr, &gv->default_xqos_wr);
   ddsi_xqos_copy (&gv->builtin_stateless_xqos_rd, &gv->default_xqos_rd);
   ddsi_xqos_copy (&gv->builtin_stateless_xqos_wr, &gv->default_xqos_wr);
   gv->builtin_stateless_xqos_wr.reliability.kind = DDS_RELIABILITY_BEST_EFFORT;
@@ -1217,13 +1269,26 @@ int rtps_init (struct ddsi_domaingv *gv)
 
   /* Setting these properties allows the CryptoKeyFactory to recognize
    * the entities (see DDS Security spec chapter 8.8.8.1). */
-  add_property_to_xqos(&gv->builtin_volatile_xqos_rd, "dds.sec.builtin_endpoint_name", "BuiltinParticipantVolatileMessageSecureReader");
-  add_property_to_xqos(&gv->builtin_volatile_xqos_wr, "dds.sec.builtin_endpoint_name", "BuiltinParticipantVolatileMessageSecureWriter");
+  add_property_to_xqos(&gv->builtin_secure_volatile_xqos_rd, "dds.sec.builtin_endpoint_name", "BuiltinParticipantVolatileMessageSecureReader");
+  add_property_to_xqos(&gv->builtin_secure_volatile_xqos_wr, "dds.sec.builtin_endpoint_name", "BuiltinParticipantVolatileMessageSecureWriter");
 #endif
 
-  ddsrt_mutex_init (&gv->sertopics_lock);
-  gv->sertopics = ddsrt_hh_new (1, ddsi_sertopic_hash_wrap, ddsi_sertopic_equal_wrap);
-  make_special_topics (gv);
+  ddsrt_mutex_init (&gv->sertypes_lock);
+  gv->sertypes = ddsrt_hh_new (1, ddsi_sertype_hash_wrap, ddsi_sertype_equal_wrap);
+
+#ifdef DDS_HAS_TYPE_DISCOVERY
+  ddsrt_mutex_init (&gv->tl_admin_lock);
+  ddsrt_cond_init (&gv->tl_resolved_cond);
+  gv->tl_admin = ddsrt_hh_new (1, tl_meta_hash_wrap, tl_meta_equal_wrap);
+#endif
+  ddsrt_mutex_init (&gv->new_topic_lock);
+  ddsrt_cond_init (&gv->new_topic_cond);
+  gv->new_topic_version = 0;
+#ifdef DDS_HAS_TOPIC_DISCOVERY
+  ddsrt_mutex_init (&gv->topic_defs_lock);
+  gv->topic_defs = ddsrt_hh_new (1, topic_definition_hash_wrap, topic_definition_equal_wrap);
+#endif
+  make_special_types (gv);
 
   ddsrt_mutex_init (&gv->participant_set_lock);
   ddsrt_cond_init (&gv->participant_set_cond);
@@ -1420,7 +1485,7 @@ int rtps_init (struct ddsi_domaingv *gv)
       goto err_mc_conn;
   }
 
-#ifdef DDSI_INCLUDE_NETWORK_CHANNELS
+#ifdef DDS_HAS_NETWORK_CHANNELS
   {
     struct ddsi_config_channel_listelem *chptr = gv->config.channels;
     while (chptr)
@@ -1448,7 +1513,7 @@ int rtps_init (struct ddsi_domaingv *gv)
       }
       GVLOG (DDS_LC_CONFIG, "channel %s: transmit port %d\n", chptr->name, (int) ddsi_tran_port (chptr->transmit_conn));
 
-#ifdef DDSI_INCLUDE_BANDWIDTH_LIMITING
+#ifdef DDS_HAS_BANDWIDTH_LIMITING
       if (chptr->auxiliary_bandwidth_limit > 0 || lookup_thread_properties (tname))
       {
         chptr->evq = xeventq_new
@@ -1475,7 +1540,7 @@ int rtps_init (struct ddsi_domaingv *gv)
       chptr = chptr->next;
     }
   }
-#endif /* DDSI_INCLUDE_NETWORK_CHANNELS */
+#endif /* DDS_HAS_NETWORK_CHANNELS */
 
   /* Create event queues */
 
@@ -1484,14 +1549,14 @@ int rtps_init (struct ddsi_domaingv *gv)
     gv->xmit_conn,
     gv->config.max_queued_rexmit_bytes,
     gv->config.max_queued_rexmit_msgs,
-#ifdef DDSI_INCLUDE_BANDWIDTH_LIMITING
+#ifdef DDS_HAS_BANDWIDTH_LIMITING
     gv->config.auxiliary_bandwidth_limit
 #else
     0
 #endif
   );
 
-#ifdef DDSI_INCLUDE_SECURITY
+#ifdef DDS_HAS_SECURITY
   q_omg_security_init(gv);
 #endif
 
@@ -1535,7 +1600,7 @@ int rtps_init (struct ddsi_domaingv *gv)
   }
 
   gv->builtins_dqueue = nn_dqueue_new ("builtins", gv, gv->config.delivery_queue_maxsamples, builtins_dqueue_handler, NULL);
-#ifdef DDSI_INCLUDE_NETWORK_CHANNELS
+#ifdef DDS_HAS_NETWORK_CHANNELS
   for (struct ddsi_config_channel_listelem *chptr = gv->config.channels; chptr; chptr = chptr->next)
     chptr->dqueue = nn_dqueue_new (chptr->name, &gv->config, gv->config.delivery_queue_maxsamples, user_dqueue_handler, NULL);
 #else
@@ -1547,7 +1612,7 @@ int rtps_init (struct ddsi_domaingv *gv)
   return 0;
 
 #if 0
-#ifdef DDSI_INCLUDE_SECURITY
+#ifdef DDS_HAS_SECURITY
 err_post_omg_security_init:
   q_omg_security_stop (gv); // should be a no-op as it starts lazily
   q_omg_security_deinit(gv->security_context);
@@ -1572,18 +1637,33 @@ err_unicast_sockets:
   lease_management_term (gv);
   ddsrt_cond_destroy (&gv->participant_set_cond);
   ddsrt_mutex_destroy (&gv->participant_set_lock);
-  free_special_topics (gv);
+  free_special_types (gv);
 #ifndef NDEBUG
   {
     struct ddsrt_hh_iter it;
-    assert (ddsrt_hh_iter_first (gv->sertopics, &it) == NULL);
+    assert (ddsrt_hh_iter_first (gv->sertypes, &it) == NULL);
   }
 #endif
-  ddsrt_hh_free (gv->sertopics);
-  ddsrt_mutex_destroy (&gv->sertopics_lock);
-#ifdef DDSI_INCLUDE_SECURITY
+  ddsrt_hh_free (gv->sertypes);
+  ddsrt_mutex_destroy (&gv->sertypes_lock);
+#ifdef DDS_HAS_TOPIC_DISCOVERY
+  ddsrt_hh_free (gv->topic_defs);
+  ddsrt_mutex_destroy (&gv->topic_defs_lock);
+#endif
+  ddsrt_mutex_destroy (&gv->new_topic_lock);
+  ddsrt_cond_destroy (&gv->new_topic_cond);
+#ifdef DDS_HAS_TYPE_DISCOVERY
+  ddsrt_hh_free (gv->tl_admin);
+  ddsrt_mutex_destroy (&gv->tl_admin_lock);
+  ddsrt_cond_destroy (&gv->tl_resolved_cond);
+#endif
+#ifdef DDS_HAS_SECURITY
   ddsi_xqos_fini (&gv->builtin_stateless_xqos_wr);
   ddsi_xqos_fini (&gv->builtin_stateless_xqos_rd);
+  ddsi_xqos_fini (&gv->builtin_secure_volatile_xqos_wr);
+  ddsi_xqos_fini (&gv->builtin_secure_volatile_xqos_rd);
+#endif
+#ifdef DDS_HAS_TYPE_DISCOVERY
   ddsi_xqos_fini (&gv->builtin_volatile_xqos_wr);
   ddsi_xqos_fini (&gv->builtin_volatile_xqos_rd);
 #endif
@@ -1601,7 +1681,7 @@ err_unicast_sockets:
 
   ddsi_serdatapool_free (gv->serpool);
   nn_xmsgpool_free (gv->xmsgpool);
-#ifdef DDSI_INCLUDE_NETWORK_PARTITIONS
+#ifdef DDS_HAS_NETWORK_PARTITIONS
 err_network_partition_addrset:
   for (struct ddsi_config_networkpartition_listelem *np = gv->config.networkPartitions; np; np = np->next)
     unref_addrset (np->as);
@@ -1622,7 +1702,7 @@ err_udp_tcp_init:
   return -1;
 }
 
-#ifdef DDSI_INCLUDE_NETWORK_CHANNELS
+#ifdef DDS_HAS_NETWORK_CHANNELS
 static void stop_all_xeventq_upto (struct ddsi_config_channel_listelem *chptr)
 {
   for (struct ddsi_config_channel_listelem *chptr1 = gv->config.channels; chptr1 != chptr; chptr1 = chptr1->next)
@@ -1635,7 +1715,7 @@ int rtps_start (struct ddsi_domaingv *gv)
 {
   if (xeventq_start (gv->xevents, NULL) < 0)
     return -1;
-#ifdef DDSI_INCLUDE_NETWORK_CHANNELS
+#ifdef DDS_HAS_NETWORK_CHANNELS
   for (struct ddsi_config_channel_listelem *chptr = gv->config.channels; chptr; chptr = chptr->next)
   {
     if (chptr->evq)
@@ -1652,7 +1732,7 @@ int rtps_start (struct ddsi_domaingv *gv)
 
   if (setup_and_start_recv_threads (gv) < 0)
   {
-#ifdef DDSI_INCLUDE_NETWORK_CHANNELS
+#ifdef DDS_HAS_NETWORK_CHANNELS
     stop_all_xeventq_upto (NULL);
 #endif
     xeventq_stop (gv->xevents);
@@ -1701,7 +1781,7 @@ void rtps_stop (struct ddsi_domaingv *gv)
 {
   struct thread_state1 * const ts1 = lookup_thread_state ();
 
-#ifdef DDSI_INCLUDE_NETWORK_CHANNELS
+#ifdef DDS_HAS_NETWORK_CHANNELS
   struct ddsi_config_channel_listelem * chptr;
 #endif
 
@@ -1723,13 +1803,13 @@ void rtps_stop (struct ddsi_domaingv *gv)
   }
 
   xeventq_stop (gv->xevents);
-#ifdef DDSI_INCLUDE_NETWORK_CHANNELS
+#ifdef DDS_HAS_NETWORK_CHANNELS
   for (chptr = gv->config.channels; chptr; chptr = chptr->next)
   {
     if (chptr->evq)
       xeventq_stop (chptr->evq);
   }
-#endif /* DDSI_INCLUDE_NETWORK_CHANNELS */
+#endif /* DDS_HAS_NETWORK_CHANNELS */
 
   /* Send a bubble through the delivery queue for built-ins, so that any
      pending proxy participant discovery is finished before we start
@@ -1800,6 +1880,15 @@ void rtps_stop (struct ddsi_domaingv *gv)
     }
     entidx_enum_reader_fini (&est_rd);
     thread_state_awake_to_awake_no_nest (ts1);
+#ifdef DDS_HAS_TOPIC_DISCOVERY
+    struct entidx_enum_topic est_tp;
+    struct topic *tp;
+    entidx_enum_topic_init (&est_tp, gv->entity_index);
+    while ((tp = entidx_enum_topic_next (&est_tp)) != NULL)
+      delete_topic (gv, &tp->e.guid);
+    entidx_enum_topic_fini (&est_tp);
+    thread_state_awake_to_awake_no_nest (ts1);
+#endif
     entidx_enum_participant_init (&est_pp, gv->entity_index);
     while ((pp = entidx_enum_participant_next (&est_pp)) != NULL)
     {
@@ -1811,7 +1900,7 @@ void rtps_stop (struct ddsi_domaingv *gv)
 
   /* Stop background (handshake) processing in security implementation,
      do this only once we know no new events will be coming in. */
-#if DDSI_INCLUDE_SECURITY
+#if DDS_HAS_SECURITY
   q_omg_security_stop (gv);
 #endif
 
@@ -1844,7 +1933,7 @@ void rtps_fini (struct ddsi_domaingv *gv)
      the expected reference counts all over the radmin thingummies. */
   nn_dqueue_free (gv->builtins_dqueue);
 
-#ifdef DDSI_INCLUDE_NETWORK_CHANNELS
+#ifdef DDS_HAS_NETWORK_CHANNELS
   chptr = gv->config.channels;
   while (chptr)
   {
@@ -1855,7 +1944,7 @@ void rtps_fini (struct ddsi_domaingv *gv)
   nn_dqueue_free (gv->user_dqueue);
 #endif
 
-#ifdef DDSI_INCLUDE_SECURITY
+#ifdef DDS_HAS_SECURITY
   q_omg_security_deinit (gv->security_context);
 #endif
 
@@ -1867,7 +1956,7 @@ void rtps_fini (struct ddsi_domaingv *gv)
     nn_xpack_sendq_fini (gv);
   }
 
-#ifdef DDSI_INCLUDE_NETWORK_CHANNELS
+#ifdef DDS_HAS_NETWORK_CHANNELS
   chptr = gv->config.channels;
   while (chptr)
   {
@@ -1894,7 +1983,7 @@ void rtps_fini (struct ddsi_domaingv *gv)
     fclose (gv->pcap_fp);
   }
 
-#ifdef DDSI_INCLUDE_NETWORK_PARTITIONS
+#ifdef DDS_HAS_NETWORK_PARTITIONS
   for (struct ddsi_config_networkpartition_listelem *np = gv->config.networkPartitions; np; np = np->next)
     unref_addrset (np->as);
 #endif
@@ -1919,21 +2008,44 @@ void rtps_fini (struct ddsi_domaingv *gv)
   lease_management_term (gv);
   ddsrt_mutex_destroy (&gv->participant_set_lock);
   ddsrt_cond_destroy (&gv->participant_set_cond);
-  free_special_topics (gv);
+  free_special_types (gv);
 
+#ifdef DDS_HAS_TOPIC_DISCOVERY
 #ifndef NDEBUG
   {
     struct ddsrt_hh_iter it;
-    assert (ddsrt_hh_iter_first (gv->sertopics, &it) == NULL);
+    assert (ddsrt_hh_iter_first (gv->topic_defs, &it) == NULL);
   }
 #endif
-  ddsrt_hh_free (gv->sertopics);
-  ddsrt_mutex_destroy (&gv->sertopics_lock);
-
-#ifdef DDSI_INCLUDE_SECURITY
+  ddsrt_hh_free (gv->topic_defs);
+  ddsrt_mutex_destroy (&gv->topic_defs_lock);
+#endif /* DDS_HAS_TOPIC_DISCOVERY */
+#ifndef NDEBUG
+  {
+    struct ddsrt_hh_iter it;
+    assert (ddsrt_hh_iter_first (gv->sertypes, &it) == NULL);
+  }
+#endif
+  ddsrt_hh_free (gv->sertypes);
+  ddsrt_mutex_destroy (&gv->sertypes_lock);
+#ifdef DDS_HAS_TYPE_DISCOVERY
+#ifndef NDEBUG
+  {
+    struct ddsrt_hh_iter it;
+    assert (ddsrt_hh_iter_first (gv->tl_admin, &it) == NULL);
+  }
+#endif
+  ddsrt_hh_free (gv->tl_admin);
+  ddsrt_mutex_destroy (&gv->tl_admin_lock);
+#endif /* DDS_HAS_TYPE_DISCOVERY */
+#ifdef DDS_HAS_SECURITY
   q_omg_security_free (gv);
   ddsi_xqos_fini (&gv->builtin_stateless_xqos_wr);
   ddsi_xqos_fini (&gv->builtin_stateless_xqos_rd);
+  ddsi_xqos_fini (&gv->builtin_secure_volatile_xqos_wr);
+  ddsi_xqos_fini (&gv->builtin_secure_volatile_xqos_rd);
+#endif
+#ifdef DDS_HAS_TYPE_DISCOVERY
   ddsi_xqos_fini (&gv->builtin_volatile_xqos_wr);
   ddsi_xqos_fini (&gv->builtin_volatile_xqos_rd);
 #endif

@@ -67,7 +67,7 @@ The default value is: "lax".
 
 
 ### //CycloneDDS/Domain/Discovery
-Children: [DSGracePeriod](#cycloneddsdomaindiscoverydsgraceperiod), [DefaultMulticastAddress](#cycloneddsdomaindiscoverydefaultmulticastaddress), [ExternalDomainId](#cycloneddsdomaindiscoveryexternaldomainid), [MaxAutoParticipantIndex](#cycloneddsdomaindiscoverymaxautoparticipantindex), [ParticipantIndex](#cycloneddsdomaindiscoveryparticipantindex), [Peers](#cycloneddsdomaindiscoverypeers), [Ports](#cycloneddsdomaindiscoveryports), [SPDPInterval](#cycloneddsdomaindiscoveryspdpinterval), [SPDPMulticastAddress](#cycloneddsdomaindiscoveryspdpmulticastaddress), [Tag](#cycloneddsdomaindiscoverytag)
+Children: [DSGracePeriod](#cycloneddsdomaindiscoverydsgraceperiod), [DefaultMulticastAddress](#cycloneddsdomaindiscoverydefaultmulticastaddress), [EnableTopicDiscoveryEndpoints](#cycloneddsdomaindiscoveryenabletopicdiscoveryendpoints), [ExternalDomainId](#cycloneddsdomaindiscoveryexternaldomainid), [MaxAutoParticipantIndex](#cycloneddsdomaindiscoverymaxautoparticipantindex), [ParticipantIndex](#cycloneddsdomaindiscoveryparticipantindex), [Peers](#cycloneddsdomaindiscoverypeers), [Ports](#cycloneddsdomaindiscoveryports), [SPDPInterval](#cycloneddsdomaindiscoveryspdpinterval), [SPDPMulticastAddress](#cycloneddsdomaindiscoveryspdpmulticastaddress), [Tag](#cycloneddsdomaindiscoverytag)
 
 The Discovery element allows specifying various parameters related to the discovery of peers.
 
@@ -88,6 +88,14 @@ Text
 This element specifies the default multicast address for all traffic other than participant discovery packets. It defaults to Discovery/SPDPMulticastAddress.
 
 The default value is: "auto".
+
+
+#### //CycloneDDS/Domain/Discovery/EnableTopicDiscoveryEndpoints
+Boolean
+
+This element controls whether the built-in endpoints for topic discovery are created and used to exchange topic discovery information.
+
+The default value is: "false".
 
 
 #### //CycloneDDS/Domain/Discovery/ExternalDomainId
@@ -519,14 +527,14 @@ The default value is: "4".
 #### //CycloneDDS/Domain/Internal/DeliveryQueueMaxSamples
 Integer
 
-This element controls the Maximum size of a delivery queue, expressed in samples. Once a delivery queue is full, incoming samples destined for that queue are dropped until space becomes available again.
+This element controls the maximum size of a delivery queue, expressed in samples. Once a delivery queue is full, incoming samples destined for that queue are dropped until space becomes available again.
 
 The default value is: "256".
 
 
 #### //CycloneDDS/Domain/Internal/EnableExpensiveChecks
 One of:
-* Comma-separated list of: whc, rhc, all
+* Comma-separated list of: whc, rhc, xevent, all
 * Or empty
 
 This element enables expensive checks in builds with assertions enabled and is ignored otherwise. Recognised categories are:
@@ -534,6 +542,8 @@ This element enables expensive checks in builds with assertions enabled and is i
  * whc: writer history cache checking
 
  * rhc: reader history cache checking
+
+ * xevent: xevent checking
 
 In addition, there is the keyword all that enables all checks.
 

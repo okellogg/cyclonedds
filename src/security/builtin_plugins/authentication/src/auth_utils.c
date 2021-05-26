@@ -370,10 +370,13 @@ AuthConfItemPrefix_t get_conf_item_type(const char *str, char **data)
 {
   const char *f = "file:", *d = "data:,", *p = "pkcs11:";
   size_t sf = strlen(f), sd = strlen(d), sp = strlen(p);
+  const char *ptr;
   assert(str);
   assert(data);
 
-  char *ptr = ddssec_strchrs(str, " \t", false);
+  for (ptr = str; *ptr == ' ' || *ptr == '\t'; ptr++)
+    /* ignore leading whitespace */;
+
   if (strncmp(ptr, f, sf) == 0)
   {
     size_t e = strncmp(ptr + sf, "//", 2) == 0 ? 2 : 0;
@@ -503,7 +506,7 @@ DDS_Security_ValidationResult_t verify_certificate(X509 *identityCert, X509 *ide
   if (X509_verify_cert(ctx) != 1)
   {
     const char *msg = X509_verify_cert_error_string(X509_STORE_CTX_get_error(ctx));
-    char *subject = get_certificate_subject_name(identityCert, NULL);
+    char *subject = get_certificate_subject_name(identityCert, ex);
     DDS_Security_Exception_set(ex, DDS_AUTH_PLUGIN_CONTEXT, DDS_SECURITY_ERR_UNDEFINED_CODE, DDS_SECURITY_VALIDATION_FAILED, "Certificate not valid: error: %s; subject: %s", msg, subject ? subject : "[not found]");
     ddsrt_free(subject);
     goto err_ctx_init;

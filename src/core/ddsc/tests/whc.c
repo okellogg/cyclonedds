@@ -152,12 +152,12 @@ static void test_whc_end_state(dds_durability_kind_t d, dds_reliability_kind_t r
   dds_return_t ret;
   int32_t s, i;
 
-  printf ("test_whc_end_state: %s, %s, %s(%d), durability %s(%d), readers: %u local, %u remote, instances: %u, key %u, deadline %"PRId64"\n",
+  printf ("test_whc_end_state: %s, %s, %s(%d), durability %s(%d), readers: %u local, %u remote, instances: %"PRId32", key %u, deadline %"PRId64"\n",
       d == V ? "volatile" : "TL",
       r == BE ? "best-effort" : "reliable",
       h == KA ? "keep-all" : "keep-last", h == KA ? 0 : hd,
       dh == KA ? "keep-all" : "keep-last", dh == KA ? 0 : dhd,
-      lrd, rrd, ni, k,
+      (unsigned)lrd, (unsigned)rrd, ni, (unsigned)k,
       dl ? DEADLINE_DURATION : INT64_C(-1));
 
   dds_qset_durability (g_qos, d);
@@ -257,7 +257,7 @@ CU_Test(ddsc_whc, check_end_state, .init=whc_init, .fini=whc_fini, .timeout=30)
   bool rem_rd[] = {false, true};
   int32_t n_inst[] = {1, 3};
   bool keyed[] = {false, true};
-#ifdef DDSI_INCLUDE_DEADLINE_MISSED
+#ifdef DDS_HAS_DEADLINE_MISSED
   bool deadline[] = {false, true};
 #else
   bool deadline[] = {false};

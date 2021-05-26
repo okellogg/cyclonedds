@@ -9,6 +9,7 @@
 #include "dds/ddsrt/static_assert.h"
 #include "dds/ddsrt/misc.h"
 #include "dds/ddsi/q_config.h"
+#include "dds/features.h"
 
 #include "ddsconf.h"
 
@@ -71,7 +72,7 @@ void gendef_pf_maybe_uint32 (FILE *out, void *parent, struct cfgelem const * con
     fprintf (out, "  cfg->%s.value = UINT32_C (%"PRIu32");\n", cfgelem->membername, p->value);
 }
 
-#ifdef DDSI_INCLUDE_SSL
+#ifdef DDS_HAS_SSL
 void gendef_pf_min_tls_version (FILE *out, void *parent, struct cfgelem const * const cfgelem)
 {
   struct ddsi_config_ssl_min_version * const p = cfg_address (parent, cfgelem);
@@ -110,16 +111,18 @@ void gendef_pf_tracemask (FILE *out, void *parent, struct cfgelem const * const 
 {
   /* tracemask is a bit bizarre: it has no member name ... all that has to do with Verbosity and Category
      existing both, and how it is output in the trace ... */
-  const uint32_t *p = cfg_address (parent, cfgelem);
   assert (cfgelem->membername == NULL);
-  if (*p != 0)
-    fprintf (out, "  cfg->tracemask = UINT32_C (%"PRIu32");\n", *p);
+  assert (cfgelem->elem_offset == 0);
+  (void) cfgelem;
+  const struct ddsi_config *cfg = parent;
+  if (cfg->tracemask != 0)
+    fprintf (out, "  cfg->tracemask = UINT32_C (%"PRIu32");\n", cfg->tracemask);
 }
 
 void gendef_pf_xcheck (FILE *out, void *parent, struct cfgelem const * const cfgelem) {
   gendef_pf_uint32 (out, parent, cfgelem);
 }
-#ifdef DDSI_INCLUDE_BANDWIDTH_LIMITING
+#ifdef DDS_HAS_BANDWIDTH_LIMITING
 void gendef_pf_bandwidth (FILE *out, void *parent, struct cfgelem const * const cfgelem) {
   gendef_pf_uint32 (out, parent, cfgelem);
 }

@@ -97,7 +97,6 @@ static void maybe_set_reader_in_sync (struct proxy_writer *pwr, struct pwr_rd_ma
     case PRMSS_OUT_OF_SYNC:
       if (!wn->filtered)
       {
-        assert (nn_reorder_next_seq (wn->u.not_in_sync.reorder) <= nn_reorder_next_seq (pwr->reorder));
         if (pwr->have_seen_heartbeat && nn_reorder_next_seq (wn->u.not_in_sync.reorder) == nn_reorder_next_seq (pwr->reorder))
         {
           ETRACE (pwr, " msr_in_sync("PGUIDFMT" out-of-sync to tlcatchup)", PGUID (wn->rd_guid));
@@ -641,9 +640,8 @@ struct nn_xmsg * nn_gap_info_create_gap(struct writer *wr, struct proxy_reader *
   }
   else
   {
-    unsigned i;
-    ETRACE (wr, " FXGAP%"PRId64"..%"PRId64"/%d:", gi->gapstart, gi->gapend, gi->gapnumbits);
-    for (i = 0; i < gi->gapnumbits; i++)
+    ETRACE (wr, " FXGAP%"PRId64"..%"PRId64"/%"PRIu32":", gi->gapstart, gi->gapend, gi->gapnumbits);
+    for (uint32_t i = 0; i < gi->gapnumbits; i++)
       ETRACE (wr, "%c", nn_bitset_isset (gi->gapnumbits, gi->gapbits, i) ? '1' : '0');
   }
 
@@ -1909,9 +1907,9 @@ static int handle_Gap (struct receiver_state *rst, ddsrt_etime_t tnow, struct nn
   return 1;
 }
 
-static struct ddsi_serdata *get_serdata (struct ddsi_sertopic const * const topic, const struct nn_rdata *fragchain, uint32_t sz, int justkey, unsigned statusinfo, ddsrt_wctime_t tstamp)
+static struct ddsi_serdata *get_serdata (struct ddsi_sertype const * const type, const struct nn_rdata *fragchain, uint32_t sz, int justkey, unsigned statusinfo, ddsrt_wctime_t tstamp)
 {
-  struct ddsi_serdata *sd = ddsi_serdata_from_ser (topic, justkey ? SDK_KEY : SDK_DATA, fragchain, sz);
+  struct ddsi_serdata *sd = ddsi_serdata_from_ser (type, justkey ? SDK_KEY : SDK_DATA, fragchain, sz);
   if (sd)
   {
     sd->statusinfo = statusinfo;
@@ -1929,7 +1927,7 @@ struct remote_sourceinfo {
   ddsrt_wctime_t tstamp;
 };
 
-static struct ddsi_serdata *remote_make_sample (struct ddsi_tkmap_instance **tk, struct ddsi_domaingv *gv, struct ddsi_sertopic const * const topic, void *vsourceinfo)
+static struct ddsi_serdata *remote_make_sample (struct ddsi_tkmap_instance **tk, struct ddsi_domaingv *gv, struct ddsi_sertype const * const type, void *vsourceinfo)
 {
   /* hopefully the compiler figures out that these are just aliases and doesn't reload them
      unnecessarily from memory */
@@ -1960,7 +1958,7 @@ static struct ddsi_serdata *remote_make_sample (struct ddsi_tkmap_instance **tk,
                   si->data_smhdr_flags, sampleinfo->size);
       return NULL;
     }
-    sample = get_serdata (topic, fragchain, sampleinfo->size, 0, statusinfo, tstamp);
+    sample = get_serdata (type, fragchain, sampleinfo->size, 0, statusinfo, tstamp);
   }
   else if (sampleinfo->size)
   {
@@ -1969,12 +1967,12 @@ static struct ddsi_serdata *remote_make_sample (struct ddsi_tkmap_instance **tk,
        as one would expect to receive */
     if (data_smhdr_flags & DATA_FLAG_KEYFLAG)
     {
-      sample = get_serdata (topic, fragchain, sampleinfo->size, 1, statusinfo, tstamp);
+      sample = get_serdata (type, fragchain, sampleinfo->size, 1, statusinfo, tstamp);
     }
     else
     {
       assert (data_smhdr_flags & DATA_FLAG_DATAFLAG);
-      sample = get_serdata (topic, fragchain, sampleinfo->size, 0, statusinfo, tstamp);
+      sample = get_serdata (type, fragchain, sampleinfo->size, 0, statusinfo, tstamp);
     }
   }
   else if (data_smhdr_flags & DATA_FLAG_INLINE_QOS)
@@ -1991,7 +1989,7 @@ static struct ddsi_serdata *remote_make_sample (struct ddsi_tkmap_instance **tk,
        * hash. This means the keyhash can't be decoded into a sample. */
       failmsg = "keyhash is protected";
     }
-    else if ((sample = ddsi_serdata_from_keyhash (topic, &qos->keyhash)) == NULL)
+    else if ((sample = ddsi_serdata_from_keyhash (type, &qos->keyhash)) == NULL)
       failmsg = "keyhash is MD5 and can't be converted to key value";
     else
     {
@@ -2013,7 +2011,7 @@ static struct ddsi_serdata *remote_make_sample (struct ddsi_tkmap_instance **tk,
                   "data(application, vendor %u.%u): "PGUIDFMT" #%"PRId64": deserialization %s/%s failed (%s)\n",
                   sampleinfo->rst->vendor.id[0], sampleinfo->rst->vendor.id[1],
                   PGUID (guid), sampleinfo->seq,
-                  topic->name, topic->type_name,
+                  pwr && (pwr->c.xqos->present & QP_TOPIC_NAME) ? pwr->c.xqos->topic_name : "", type->type_name,
                   failmsg ? failmsg : "for reasons unknown");
   }
   else
@@ -2033,9 +2031,10 @@ static struct ddsi_serdata *remote_make_sample (struct ddsi_tkmap_instance **tk,
       if (gv->logconfig.c.mask & DDS_LC_CONTENT)
         res = ddsi_serdata_print (sample, tmp, sizeof (tmp));
       if (pwr) guid = pwr->e.guid; else memset (&guid, 0, sizeof (guid));
-      GVTRACE ("data(application, vendor %u.%u): "PGUIDFMT" #%"PRId64": ST%x %s/%s:%s%s",
+      GVTRACE ("data(application, vendor %u.%u): "PGUIDFMT" #%"PRId64": ST%"PRIx32" %s/%s:%s%s",
                sampleinfo->rst->vendor.id[0], sampleinfo->rst->vendor.id[1],
-               PGUID (guid), sampleinfo->seq, statusinfo, topic->name, topic->type_name,
+               PGUID (guid), sampleinfo->seq, statusinfo,
+               pwr && (pwr->c.xqos->present & QP_TOPIC_NAME) ? pwr->c.xqos->topic_name : "", type->type_name,
                tmp, res < sizeof (tmp) - 1 ? "" : "(trunc)");
     }
   }
@@ -2895,6 +2894,7 @@ static int handle_submsg_sequence
     bool byteswap;
     unsigned octetsToNextHeader;
 
+    DDSRT_WARNING_MSVC_OFF(6326)
     if (sm->smhdr.flags & SMFLAG_ENDIANNESS)
     {
       byteswap = !(DDSRT_ENDIAN == DDSRT_LITTLE_ENDIAN);
@@ -2903,6 +2903,7 @@ static int handle_submsg_sequence
     {
       byteswap =  (DDSRT_ENDIAN == DDSRT_LITTLE_ENDIAN);
     }
+    DDSRT_WARNING_MSVC_ON(6326)
     if (byteswap)
     {
       sm->smhdr.octetsToNextHeader = ddsrt_bswap2u (sm->smhdr.octetsToNextHeader);
@@ -3217,6 +3218,7 @@ static bool do_packet (struct thread_state1 * const ts1, struct ddsi_domaingv *g
     {
       int swap;
 
+      DDSRT_WARNING_MSVC_OFF(6326)
       if (ml->smhdr.flags & SMFLAG_ENDIANNESS)
       {
         swap = !(DDSRT_ENDIAN == DDSRT_LITTLE_ENDIAN);
@@ -3225,6 +3227,7 @@ static bool do_packet (struct thread_state1 * const ts1, struct ddsi_domaingv *g
       {
         swap =  (DDSRT_ENDIAN == DDSRT_LITTLE_ENDIAN);
       }
+      DDSRT_WARNING_MSVC_ON(6326)
       if (swap)
       {
         ml->length = ddsrt_bswap4u (ml->length);
@@ -3417,7 +3420,7 @@ static void rebuild_local_participant_set (struct thread_state1 * const ts1, str
     qsort (lps->ps, lps->nps, sizeof (*lps->ps), local_participant_cmp);
     lps->nps = (unsigned) dedup_sorted_array (lps->ps, lps->nps, sizeof (*lps->ps), local_participant_cmp);
   }
-  GVTRACE ("  nparticipants %u\n", lps->nps);
+  GVTRACE ("  nparticipants %"PRIu32"\n", lps->nps);
 }
 
 uint32_t listen_thread (struct ddsi_tran_listener *listener)
@@ -3468,12 +3471,12 @@ void trigger_recv_threads (const struct ddsi_domaingv *gv)
         ddsrt_iovec_t iov;
         iov.iov_base = &dummy;
         iov.iov_len = 1;
-        GVTRACE ("trigger_recv_threads: %d single %s\n", i, ddsi_locator_to_string (buf, sizeof (buf), dst));
+        GVTRACE ("trigger_recv_threads: %"PRIu32" single %s\n", i, ddsi_locator_to_string (buf, sizeof (buf), dst));
         ddsi_conn_write (gv->xmit_conn, dst, 1, &iov, 0);
         break;
       }
       case RTM_MANY: {
-        GVTRACE ("trigger_recv_threads: %d many %p\n", i, (void *) gv->recv_threads[i].arg.u.many.ws);
+        GVTRACE ("trigger_recv_threads: %"PRIu32" many %p\n", i, (void *) gv->recv_threads[i].arg.u.many.ws);
         os_sockWaitsetTrigger (gv->recv_threads[i].arg.u.many.ws);
         break;
       }

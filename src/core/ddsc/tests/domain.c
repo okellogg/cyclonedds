@@ -150,7 +150,7 @@ CU_Test(ddsc_domain_create, valid)
   dds_domainid_t did;
   dds_entity_t domain;
 
-  domain = dds_create_domain(1, "<"DDS_PROJECT_NAME"><Domain><Id>1</Id></Domain></"DDS_PROJECT_NAME">");
+  domain = dds_create_domain(1, "<CycloneDDS><Domain><Id>1</Id></Domain></CycloneDDS>");
   CU_ASSERT_FATAL(domain > 0);
 
   ret = dds_get_domainid (domain, &did);
@@ -170,7 +170,7 @@ CU_Test(ddsc_domain_create, mismatch)
   dds_entity_t domain;
 
   /* The config should have been ignored. */
-  domain = dds_create_domain(2, "<"DDS_PROJECT_NAME"><Domain><Id>3</Id></Domain></"DDS_PROJECT_NAME">");
+  domain = dds_create_domain(2, "<CycloneDDS><Domain><Id>3</Id></Domain></CycloneDDS>");
   CU_ASSERT_FATAL(domain > 0);
 
   ret = dds_get_domainid (domain, &did);
@@ -222,10 +222,10 @@ CU_Test(ddsc_domain_create, after_domain)
   dds_entity_t domain1;
   dds_entity_t domain2;
 
-  domain1 = dds_create_domain(4, "<"DDS_PROJECT_NAME"><Domain><Id>any</Id></Domain></"DDS_PROJECT_NAME">");
+  domain1 = dds_create_domain(4, "<CycloneDDS><Domain><Id>any</Id></Domain></CycloneDDS>");
   CU_ASSERT_FATAL(domain1 > 0);
 
-  domain2 = dds_create_domain(4, "<"DDS_PROJECT_NAME"><Domain><Id>any</Id></Domain></"DDS_PROJECT_NAME">");
+  domain2 = dds_create_domain(4, "<CycloneDDS><Domain><Id>any</Id></Domain></CycloneDDS>");
   CU_ASSERT_FATAL(domain2 == DDS_RETCODE_PRECONDITION_NOT_MET);
 
   dds_delete(domain1);
@@ -239,7 +239,7 @@ CU_Test(ddsc_domain_create, after_participant)
   participant = dds_create_participant (5, NULL, NULL);
   CU_ASSERT_FATAL(participant > 0);
 
-  domain = dds_create_domain(5, "<"DDS_PROJECT_NAME"><Domain><Id>any</Id></Domain></"DDS_PROJECT_NAME">");
+  domain = dds_create_domain(5, "<CycloneDDS><Domain><Id>any</Id></Domain></CycloneDDS>");
   CU_ASSERT_FATAL(domain == DDS_RETCODE_PRECONDITION_NOT_MET);
 
   dds_delete(participant);
@@ -252,10 +252,10 @@ CU_Test(ddsc_domain_create, diff)
   dds_entity_t domain1;
   dds_entity_t domain2;
 
-  domain1 = dds_create_domain(1, "<"DDS_PROJECT_NAME"><Domain><Id>any</Id></Domain></"DDS_PROJECT_NAME">");
+  domain1 = dds_create_domain(1, "<CycloneDDS><Domain><Id>any</Id></Domain></CycloneDDS>");
   CU_ASSERT_FATAL(domain1 > 0);
 
-  domain2 = dds_create_domain(2, "<"DDS_PROJECT_NAME"><Domain><Id>any</Id></Domain></"DDS_PROJECT_NAME">");
+  domain2 = dds_create_domain(2, "<CycloneDDS><Domain><Id>any</Id></Domain></CycloneDDS>");
   CU_ASSERT_FATAL(domain2 > 0);
 
   ret = dds_get_domainid (domain1, &did);
@@ -280,7 +280,7 @@ CU_Test(ddsc_domain_create, diff)
 CU_Test(ddsc_domain_create, domain_default)
 {
   dds_entity_t domain;
-  domain = dds_create_domain(DDS_DOMAIN_DEFAULT, "<"DDS_PROJECT_NAME"><Domain><Id>any</Id></Domain></"DDS_PROJECT_NAME">");
+  domain = dds_create_domain(DDS_DOMAIN_DEFAULT, "<CycloneDDS><Domain><Id>any</Id></Domain></CycloneDDS>");
   CU_ASSERT_FATAL(domain == DDS_RETCODE_BAD_PARAMETER);
 }
 
@@ -317,6 +317,7 @@ static void logsink (void *varg, const dds_log_data_t *msg)
     // do by rewriting the {0} to {}
     char *p = strchr (arg->buf[arg->size], '{');
     CU_ASSERT_FATAL (p != NULL);
+    assert (p != NULL); // Clang static analyzer
     p++;
     CU_ASSERT_FATAL (strcmp (p, "}\n") == 0 || strcmp (p, "0}\n") == 0);
     if (*p == '0')
@@ -350,6 +351,9 @@ CU_Test(ddsc_domain_create, raw_config)
 
   struct ddsi_config config;
   ddsi_config_init_default (&config);
+  /* Default tracemask is must be checked separately because we have to overwrite it
+     to automatically check all the others */
+  CU_ASSERT(config.tracemask == 0);
   config.tracemask = DDS_LC_CONFIG;
   dds_set_trace_sink (logsink, &arg_raw);
   domain = dds_create_domain_with_rawconfig (1, &config);
@@ -372,7 +376,7 @@ CU_Test(ddsc_domain_create, raw_config)
     for (; i < arg_xml.size; i++)
       printf ("XML: %s", arg_xml.buf[i]);
     for (; j < arg_raw.size; j++)
-      printf ("RAW: %s", arg_xml.buf[j]);
+      printf ("RAW: %s", arg_raw.buf[j]);
   }
 
   for (size_t i = 0; i < arg_xml.size; i++)

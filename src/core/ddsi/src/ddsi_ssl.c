@@ -15,7 +15,7 @@
 #include "dds/ddsrt/log.h"
 #include "dds/ddsrt/misc.h"
 
-#ifdef DDSI_INCLUDE_SSL
+#ifdef DDS_HAS_SSL
 
 #include <assert.h>
 #include <string.h>
@@ -28,6 +28,7 @@
 #include "dds/ddsrt/sockets.h"
 #include "dds/ddsrt/sync.h"
 #include "dds/ddsrt/threads.h"
+#include "dds/ddsrt/string.h"
 #include "dds/ddsi/ddsi_domaingv.h"
 
 static SSL_CTX *ddsi_ssl_ctx = NULL;
@@ -178,14 +179,13 @@ static void ddsi_ssl_dynlock_destroy (CRYPTO_dynlock_value *lock, const char *fi
 
 static int ddsi_ssl_password (char *buf, int num, int rwflag, void *udata)
 {
+  size_t cnt;
   struct ddsi_domaingv *gv = udata;
   (void) rwflag;
-  if (num < 0 || (size_t) num < strlen (gv->config.ssl_key_pass) + 1)
+  if (num < 0)
     return 0;
-  DDSRT_WARNING_MSVC_OFF(4996);
-  strcpy (buf, gv->config.ssl_key_pass);
-  DDSRT_WARNING_MSVC_ON(4996);
-  return (int) strlen (gv->config.ssl_key_pass);
+  cnt = ddsrt_strlcpy(buf, gv->config.ssl_key_pass, (size_t)num);
+  return cnt >= (size_t)num ? 0 : (int)cnt;
 }
 
 static SSL_CTX *ddsi_ssl_ctx_init (struct ddsi_domaingv *gv)
@@ -414,4 +414,4 @@ void ddsi_ssl_config_plugin (struct ddsi_ssl_plugins *plugin)
   plugin->accept = ddsi_ssl_accept;
 }
 
-#endif /* DDSI_INCLUDE_SSL */
+#endif /* DDS_HAS_SSL */

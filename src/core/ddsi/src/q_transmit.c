@@ -36,7 +36,7 @@
 #include "dds/ddsi/q_lease.h"
 #include "dds/ddsi/ddsi_tkmap.h"
 #include "dds/ddsi/ddsi_serdata.h"
-#include "dds/ddsi/ddsi_sertopic.h"
+#include "dds/ddsi/ddsi_sertype.h"
 #include "dds/ddsi/ddsi_security_omg.h"
 
 #include "dds/ddsi/sysdeps.h"
@@ -271,10 +271,12 @@ struct nn_xmsg *writer_hbcontrol_piggyback (struct writer *wr, const struct whc_
   struct hbcontrol * const hbc = &wr->hbcontrol;
   uint32_t last_packetid;
   ddsrt_mtime_t tlast;
+  ddsrt_mtime_t t_of_last_hb;
   struct nn_xmsg *msg;
 
   tlast = hbc->t_of_last_write;
   last_packetid = hbc->last_packetid;
+  t_of_last_hb = hbc->t_of_last_hb;
 
   hbc->t_of_last_write = tnow;
   hbc->last_packetid = packetid;
@@ -289,12 +291,18 @@ struct nn_xmsg *writer_hbcontrol_piggyback (struct writer *wr, const struct whc_
     /* So we force a heartbeat in - but we also rely on our caller to
        send the packet out */
     msg = writer_hbcontrol_create_heartbeat (wr, whcst, tnow, *hbansreq, 1);
-  } else if (last_packetid != packetid) {
+  } else if (last_packetid != packetid && tnow.v - t_of_last_hb.v > DDS_USECS (100)) {
     /* If we crossed a packet boundary since the previous write,
        piggyback a heartbeat, with *hbansreq determining whether or
        not an ACK is needed.  We don't force the packet out either:
        this is just to ensure a regular flow of ACKs for cleaning up
-       the WHC & for allowing readers to NACK missing samples. */
+       the WHC & for allowing readers to NACK missing samples.
+
+       Still rate-limit: if there are new readers that haven't sent an
+       an ACK yet, the FINAL flag will be cleared and so we get an ACK
+       storm if writing at a high rate without batching which eats up
+       a *large* amount of time because there are out-of-order readers
+       present. */
     msg = writer_hbcontrol_create_heartbeat (wr, whcst, tnow, *hbansreq, 1);
   } else {
     *hbansreq = 0;
@@ -315,7 +323,7 @@ struct nn_xmsg *writer_hbcontrol_piggyback (struct writer *wr, const struct whc_
   return msg;
 }
 
-#ifdef DDSI_INCLUDE_SECURITY
+#ifdef DDS_HAS_SECURITY
 struct nn_xmsg *writer_hbcontrol_p2p(struct writer *wr, const struct whc_state *whcst, int hbansreq, struct proxy_reader *prd)
 {
   struct ddsi_domaingv const * const gv = wr->e.gv;
@@ -915,11 +923,11 @@ static int insert_sample_in_whc (struct writer *wr, seqno_t seq, struct ddsi_pli
     ETRACE (wr, "write_sample "PGUIDFMT" #%"PRId64, PGUID (wr->e.guid), seq);
     if (plist != 0 && (plist->present & PP_COHERENT_SET))
       ETRACE (wr, " C#%"PRId64"", fromSN (plist->coherent_set_seqno));
-    ETRACE (wr, ": ST%"PRIu32" %s/%s:%s%s\n", serdata->statusinfo, wr->topic->name, wr->topic->type_name, ppbuf, tmp < (int) sizeof (ppbuf) ? "" : " (trunc)");
+    ETRACE (wr, ": ST%"PRIu32" %s/%s:%s%s\n", serdata->statusinfo, wr->xqos->topic_name, wr->type->type_name, ppbuf, tmp < (int) sizeof (ppbuf) ? "" : " (trunc)");
   }
 
   assert (wr->reliable || have_reliable_subs (wr) == 0);
-#ifdef DDSI_INCLUDE_DEADLINE_MISSED
+#ifdef DDS_HAS_DEADLINE_MISSED
   /* If deadline missed duration is not infinite, the sample is inserted in
      the whc so that the instance is created (or renewed) in the whc and the deadline
      missed event is registered. The sample is removed immediately after inserting it
@@ -930,7 +938,7 @@ static int insert_sample_in_whc (struct writer *wr, seqno_t seq, struct ddsi_pli
   if ((wr->reliable && have_reliable_subs (wr)) || wr_deadline || wr->handle_as_transient_local)
   {
     ddsrt_mtime_t exp = DDSRT_MTIME_NEVER;
-#ifdef DDSI_INCLUDE_LIFESPAN
+#ifdef DDS_HAS_LIFESPAN
     /* Don't set expiry for samples with flags unregister or dispose, because these are required
      * for sample lifecycle and should always be delivered to the reader so that is can clean up
      * its history cache. */
@@ -939,7 +947,7 @@ static int insert_sample_in_whc (struct writer *wr, seqno_t seq, struct ddsi_pli
 #endif
     res = ((insres = whc_insert (wr->whc, writer_max_drop_seq (wr), seq, exp, plist, serdata, tk)) < 0) ? insres : 1;
 
-#ifdef DDSI_INCLUDE_DEADLINE_MISSED
+#ifdef DDS_HAS_DEADLINE_MISSED
     if (!(wr->reliable && have_reliable_subs (wr)) && !wr->handle_as_transient_local)
     {
       /* Sample was inserted only because writer has deadline, so we'll remove the sample from whc */
@@ -1185,7 +1193,7 @@ static int write_sample_eot (struct thread_state1 * const ts1, struct nn_xpack *
     tmp = sizeof (ppbuf) - 1;
     GVWARNING ("dropping oversize (%"PRIu32" > %"PRIu32") sample from local writer "PGUIDFMT" %s/%s:%s%s\n",
                ddsi_serdata_size (serdata), gv->config.max_sample_size,
-               PGUID (wr->e.guid), wr->topic->name, wr->topic->type_name, ppbuf,
+               PGUID (wr->e.guid), wr->xqos->topic_name, wr->type->type_name, ppbuf,
                tmp < (int) sizeof (ppbuf) ? "" : " (trunc)");
     r = DDS_RETCODE_BAD_PARAMETER;
     goto drop;
