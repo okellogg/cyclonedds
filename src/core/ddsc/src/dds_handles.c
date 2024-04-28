@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <string.h>
 #include <assert.h>
 #include "dds/ddsrt/time.h"
@@ -16,11 +15,11 @@
 #include "dds/ddsrt/heap.h"
 #include "dds/ddsrt/random.h"
 #include "dds/ddsrt/hopscotch.h"
-#include "dds/ddsi/q_thread.h"
+#include "dds/ddsi/ddsi_thread.h"
 #include "dds__handles.h"
 #include "dds__types.h"
 
-#define HDL_REFCOUNT_MASK  (0x07fff000u)
+#define HDL_REFCOUNT_MASK  (0x03fff000u)
 #define HDL_REFCOUNT_UNIT  (0x00001000u)
 #define HDL_REFCOUNT_SHIFT 12
 #define HDL_PINCOUNT_MASK  (0x00000fffu)
@@ -73,7 +72,7 @@ static uint32_t handle_hash (const void *va)
   return (uint32_t) a->hdl;
 }
 
-static int handle_equal (const void *va, const void *vb)
+static bool handle_equal (const void *va, const void *vb)
 {
   const struct dds_handle_link *a = va;
   const struct dds_handle_link *b = vb;
@@ -118,19 +117,22 @@ void dds_handle_server_fini (void)
   }
 }
 
-static bool hhadd (struct ddsrt_hh *ht, void *elem) { return ddsrt_hh_add (ht, elem); }
-static dds_handle_t dds_handle_create_int (struct dds_handle_link *link, bool implicit, bool refc_counts_children)
+static dds_handle_t dds_handle_create_int (struct dds_handle_link *link, bool implicit, bool refc_counts_children, bool user_access)
 {
-  ddsrt_atomic_st32 (&link->cnt_flags, HDL_FLAG_PENDING | (implicit ? HDL_FLAG_IMPLICIT : HDL_REFCOUNT_UNIT) | (refc_counts_children ? HDL_FLAG_ALLOW_CHILDREN : 0) | 1u);
+  uint32_t flags = HDL_FLAG_PENDING;
+  flags |= implicit ? HDL_FLAG_IMPLICIT : HDL_REFCOUNT_UNIT;
+  flags |= refc_counts_children ? HDL_FLAG_ALLOW_CHILDREN : 0;
+  flags |= user_access ? 0 : HDL_FLAG_NO_USER_ACCESS;
+  ddsrt_atomic_st32 (&link->cnt_flags, flags | 1u);
   do {
     do {
       link->hdl = (int32_t) (ddsrt_random () & INT32_MAX);
     } while (link->hdl == 0 || link->hdl >= DDS_MIN_PSEUDO_HANDLE);
-  } while (!hhadd (handles.ht, link));
+  } while (!ddsrt_hh_add (handles.ht, link));
   return link->hdl;
 }
 
-dds_handle_t dds_handle_create (struct dds_handle_link *link, bool implicit, bool allow_children)
+dds_handle_t dds_handle_create (struct dds_handle_link *link, bool implicit, bool allow_children, bool user_access)
 {
   dds_handle_t ret;
   ddsrt_mutex_lock (&handles.lock);
@@ -142,7 +144,7 @@ dds_handle_t dds_handle_create (struct dds_handle_link *link, bool implicit, boo
   else
   {
     handles.count++;
-    ret = dds_handle_create_int (link, implicit, allow_children);
+    ret = dds_handle_create_int (link, implicit, allow_children, user_access);
     ddsrt_mutex_unlock (&handles.lock);
     assert (ret > 0);
   }
@@ -165,7 +167,7 @@ dds_return_t dds_handle_register_special (struct dds_handle_link *link, bool imp
     handles.count++;
     ddsrt_atomic_st32 (&link->cnt_flags, HDL_FLAG_PENDING | (implicit ? HDL_FLAG_IMPLICIT : HDL_REFCOUNT_UNIT) | (allow_children ? HDL_FLAG_ALLOW_CHILDREN : 0) | 1u);
     link->hdl = handle;
-    if (hhadd (handles.ht, link))
+    if (ddsrt_hh_add (handles.ht, link))
       ret = handle;
     else
       ret = DDS_RETCODE_BAD_PARAMETER;
@@ -201,16 +203,14 @@ int32_t dds_handle_delete (struct dds_handle_link *link)
   assert ((cf & HDL_PINCOUNT_MASK) == 1u);
 #endif
   ddsrt_mutex_lock (&handles.lock);
-  int x = ddsrt_hh_remove (handles.ht, link);
-  assert(x);
-  (void)x;
+  ddsrt_hh_remove_present (handles.ht, link);
   assert (handles.count > 0);
   handles.count--;
   ddsrt_mutex_unlock (&handles.lock);
   return DDS_RETCODE_OK;
 }
 
-static int32_t dds_handle_pin_int (dds_handle_t hdl, uint32_t delta, struct dds_handle_link **link)
+static int32_t dds_handle_pin_int (dds_handle_t hdl, uint32_t delta, bool from_user, struct dds_handle_link **link)
 {
   struct dds_handle_link dummy = { .hdl = hdl };
   int32_t rc;
@@ -237,10 +237,18 @@ static int32_t dds_handle_pin_int (dds_handle_t hdl, uint32_t delta, struct dds_
     rc = DDS_RETCODE_OK;
     do {
       cf = ddsrt_atomic_ld32 (&(*link)->cnt_flags);
-      if (cf & (HDL_FLAG_CLOSING | HDL_FLAG_PENDING))
+      if (cf & (HDL_FLAG_CLOSING | HDL_FLAG_PENDING | HDL_FLAG_NO_USER_ACCESS))
       {
-        rc = DDS_RETCODE_BAD_PARAMETER;
-        break;
+        if (cf & (HDL_FLAG_CLOSING | HDL_FLAG_PENDING))
+        {
+          rc = DDS_RETCODE_BAD_PARAMETER;
+          break;
+        }
+        else if (from_user)
+        {
+          rc = DDS_RETCODE_BAD_PARAMETER;
+          break;
+        }
       }
     } while (!ddsrt_atomic_cas32 (&(*link)->cnt_flags, cf, cf + delta));
   }
@@ -250,10 +258,15 @@ static int32_t dds_handle_pin_int (dds_handle_t hdl, uint32_t delta, struct dds_
 
 int32_t dds_handle_pin (dds_handle_t hdl, struct dds_handle_link **link)
 {
-  return dds_handle_pin_int (hdl, 1u, link);
+  return dds_handle_pin_int (hdl, 1u, true, link);
 }
 
-int32_t dds_handle_pin_for_delete (dds_handle_t hdl, bool explicit, struct dds_handle_link **link)
+int32_t dds_handle_pin_with_origin (dds_handle_t hdl, bool from_user, struct dds_handle_link **link)
+{
+  return dds_handle_pin_int (hdl, 1u, from_user, link);
+}
+
+int32_t dds_handle_pin_for_delete (dds_handle_t hdl, bool explicit, bool from_user, struct dds_handle_link **link)
 {
   struct dds_handle_link dummy = { .hdl = hdl };
   int32_t rc;
@@ -280,7 +293,13 @@ int32_t dds_handle_pin_for_delete (dds_handle_t hdl, bool explicit, struct dds_h
     do {
       cf = ddsrt_atomic_ld32 (&(*link)->cnt_flags);
 
-      if (cf & (HDL_FLAG_CLOSING | HDL_FLAG_PENDING))
+      if (from_user && (cf & (HDL_FLAG_NO_USER_ACCESS)))
+      {
+        /* If the user isn't allowed to delete the handle, just say it doesn't exist */
+        rc = DDS_RETCODE_BAD_PARAMETER;
+        break;
+      }
+      else if (cf & (HDL_FLAG_CLOSING | HDL_FLAG_PENDING))
       {
         /* Only one can succeed (and if closing is already set, the handle's reference has
            already been dropped) */
@@ -416,9 +435,9 @@ bool dds_handle_drop_childref_and_pin (struct dds_handle_link *link, bool may_de
   return del_parent;
 }
 
-int32_t dds_handle_pin_and_ref (dds_handle_t hdl, struct dds_handle_link **link)
+int32_t dds_handle_pin_and_ref_with_origin (dds_handle_t hdl, bool from_user, struct dds_handle_link **link)
 {
-  return dds_handle_pin_int (hdl, HDL_REFCOUNT_UNIT + 1u, link);
+  return dds_handle_pin_int (hdl, HDL_REFCOUNT_UNIT + 1u, from_user, link);
 }
 
 void dds_handle_repin (struct dds_handle_link *link)

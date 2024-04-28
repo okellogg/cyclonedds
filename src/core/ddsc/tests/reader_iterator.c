@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2020 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <assert.h>
 #include <limits.h>
 
@@ -17,6 +16,9 @@
 #include "dds/ddsrt/threads.h"
 
 #include "test_common.h"
+
+// Because all the _wl variants are deprecated
+DDSRT_WARNING_DEPRECATED_OFF
 
 /**************************************************************************************************
  *
@@ -448,7 +450,7 @@ CU_Test(ddsc_read_next_wl, reader, .init=reader_iterator_init, .fini=reader_iter
     CU_ASSERT_EQUAL_FATAL(cntinv, RDR_INV_READ_CNT);
 
     /* return_loan 3rd arg should be in [highest count ever returned, read limit] */
-    ret = dds_return_loan(g_reader, g_loans, 1);
+    ret = dds_return_loan(g_reader, g_loans, ret);
     CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
 
     /* All samples should still be available. */
@@ -673,7 +675,7 @@ CU_Test(ddsc_take_next_wl, reader, .init=reader_iterator_init, .fini=reader_iter
     CU_ASSERT_EQUAL_FATAL(cntinv, RDR_INV_READ_CNT);
 
     /* return_loan 3rd arg should be in [highest count ever returned, read limit] */
-    ret = dds_return_loan(g_reader, g_loans, 1);
+    ret = dds_return_loan(g_reader, g_loans, ret);
     CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
 
     /* All samples should still be available. */

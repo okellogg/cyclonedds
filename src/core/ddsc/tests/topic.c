@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include "dds/dds.h"
 #include "dds/ddsrt/misc.h"
 #include "dds/ddsrt/process.h"
@@ -59,9 +58,9 @@ ddsc_topic_fini(void)
 
 /* These will check the topic creation in various ways */
 CU_TheoryDataPoints(ddsc_topic_create, valid) = {
-    CU_DataPoints(char *, "valid", "_VALID", "Val1d", "valid_", "vA_1d"),
-    CU_DataPoints(dds_qos_t **, &g_qos_null, &g_qos, &g_qos_null, &g_qos_null, &g_qos_null),
-    CU_DataPoints(dds_listener_t **, &g_list_null, &g_listener, &g_list_null, &g_list_null, &g_list_null),
+    CU_DataPoints(char *, "valid", "_VALID", "Val1d", "valid_", "vA_1d", "1valid", "valid::topic::name", "val-id", "val.id", "val/id" ),
+    CU_DataPoints(dds_qos_t **, &g_qos_null, &g_qos, &g_qos_null, &g_qos_null, &g_qos_null, &g_qos_null, &g_qos_null, &g_qos_null, &g_qos_null, &g_qos_null),
+    CU_DataPoints(dds_listener_t **, &g_list_null, &g_listener, &g_list_null, &g_list_null, &g_list_null, &g_list_null, &g_list_null, &g_list_null, &g_list_null, &g_list_null),
 };
 CU_Theory((char *name, dds_qos_t **qos, dds_listener_t **listener), ddsc_topic_create, valid, .init = ddsc_topic_init, .fini = ddsc_topic_fini)
 {
@@ -103,9 +102,9 @@ CU_Test(ddsc_topic_create, duplicate, .init = ddsc_topic_init, .fini = ddsc_topi
 
 CU_Test(ddsc_topic_create, same_name, .init = ddsc_topic_init, .fini = ddsc_topic_fini)
 {
-  /* Creating the different topic with same name should fail.  */
+  /* Creating the topic with same name and different type should succeed.  */
   dds_entity_t topic = dds_create_topic(g_participant, &RoundTripModule_Address_desc, g_topic_rtmdt_name, NULL, NULL);
-  CU_ASSERT_EQUAL_FATAL(topic, DDS_RETCODE_PRECONDITION_NOT_MET);
+  CU_ASSERT_FATAL(topic > 0);
 }
 
 CU_Test(ddsc_topic_create, recreate, .init = ddsc_topic_init, .fini = ddsc_topic_fini)
@@ -129,7 +128,7 @@ CU_Test(ddsc_topic_create, desc_null, .init = ddsc_topic_init, .fini = ddsc_topi
 }
 
 CU_TheoryDataPoints(ddsc_topic_create, invalid_names) = {
-    CU_DataPoints(char *, NULL, "", "mi-dle", "-start", "end-", "1st", "Thus$", "pl+s", "t(4)", "DCPSmytopic"),
+    CU_DataPoints(char *, NULL, "", "DCPSmytopic", "sp ace", " space", "space ","cr\r\nlf", "t\tabbed", "d\"quote", "s\'quote","select*from#table","[mytopic]"),
 };
 CU_Theory((char *name), ddsc_topic_create, invalid_names, .init = ddsc_topic_init, .fini = ddsc_topic_fini)
 {
@@ -142,21 +141,22 @@ CU_Test(ddsc_topic_get_name, valid, .init = ddsc_topic_init, .fini = ddsc_topic_
 {
   char name[MAX_NAME_SIZE];
   dds_return_t ret = dds_get_name(g_topic_rtmdt, name, MAX_NAME_SIZE);
-  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  CU_ASSERT_EQUAL_FATAL(ret, (dds_return_t) strlen (g_topic_rtmdt_name));
   CU_ASSERT_STRING_EQUAL_FATAL(name, g_topic_rtmdt_name);
 
   ret = dds_get_name(g_topic_rtmaddr, name, MAX_NAME_SIZE);
-  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  CU_ASSERT_EQUAL_FATAL(ret, (dds_return_t) strlen (g_topic_rtmaddr_name));
   CU_ASSERT_STRING_EQUAL_FATAL(name, g_topic_rtmaddr_name);
 }
 
 CU_Test(ddsc_topic_get_name, too_small, .init = ddsc_topic_init, .fini = ddsc_topic_fini)
 {
   char name[10];
+  assert (strlen (g_topic_rtmdt_name) >= sizeof (name));
   dds_return_t ret = dds_get_name(g_topic_rtmdt, name, 10);
-  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
-  g_topic_rtmdt_name[9] = '\0';
-  CU_ASSERT_STRING_EQUAL_FATAL(name, g_topic_rtmdt_name);
+  CU_ASSERT_FATAL (name[sizeof (name) - 1] == 0);
+  CU_ASSERT_FATAL (ret == (dds_return_t) strlen (g_topic_rtmdt_name));
+  CU_ASSERT_FATAL (strncmp (g_topic_rtmdt_name, name, sizeof (name) - 1) == 0);
 }
 
 CU_Test(ddsc_topic_get_name, non_topic, .init = ddsc_topic_init, .fini = ddsc_topic_fini)
@@ -191,22 +191,24 @@ CU_Test(ddsc_topic_get_type_name, valid, .init = ddsc_topic_init, .fini = ddsc_t
   const char *rtmDataTypeType = "RoundTripModule::DataType";
   const char *rtmAddressType = "RoundTripModule::Address";
   char name[MAX_NAME_SIZE];
-  dds_return_t ret = dds_get_type_name(g_topic_rtmdt, name, MAX_NAME_SIZE);
-  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  dds_return_t ret = dds_get_type_name(g_topic_rtmdt, name, sizeof (name));
+  CU_ASSERT_EQUAL_FATAL(ret, (dds_return_t) strlen (rtmDataTypeType));
   CU_ASSERT_STRING_EQUAL_FATAL(name, rtmDataTypeType);
 
-  ret = dds_get_type_name(g_topic_rtmaddr, name, MAX_NAME_SIZE);
-  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+  ret = dds_get_type_name(g_topic_rtmaddr, name, sizeof (name));
+  CU_ASSERT_EQUAL_FATAL(ret, (dds_return_t) strlen (rtmAddressType));
   CU_ASSERT_STRING_EQUAL_FATAL(name, rtmAddressType);
 }
 
 CU_Test(ddsc_topic_get_type_name, too_small, .init = ddsc_topic_init, .fini = ddsc_topic_fini)
 {
-  const char *rtmDataTypeType = "RoundTrip";
+  const char *rtmDataTypeType = "RoundTripModule::DataType";
   char name[10];
-  dds_return_t ret = dds_get_type_name(g_topic_rtmdt, name, 10);
-  CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
-  CU_ASSERT_STRING_EQUAL_FATAL(name, rtmDataTypeType);
+  assert (strlen (rtmDataTypeType) >= sizeof (name));
+  dds_return_t ret = dds_get_type_name(g_topic_rtmdt, name, sizeof (name));
+  CU_ASSERT_FATAL (name[sizeof (name) - 1] == 0);
+  CU_ASSERT_FATAL (ret == (dds_return_t) strlen (rtmDataTypeType));
+  CU_ASSERT_FATAL (strncmp (rtmDataTypeType, name, sizeof (name) - 1) == 0);
 }
 
 CU_Test(ddsc_topic_get_type_name, non_topic, .init = ddsc_topic_init, .fini = ddsc_topic_fini)
@@ -239,7 +241,7 @@ CU_Test(ddsc_topic_get_type_name, deleted, .init = ddsc_topic_init, .fini = ddsc
 CU_Test(ddsc_topic_set_qos, valid, .init = ddsc_topic_init, .fini = ddsc_topic_fini)
 {
   dds_return_t ret;
-  char data[10];
+  char data[10] = { 0 };
   dds_qset_topicdata(g_qos, &data, 10);
   ret = dds_set_qos(g_topic_rtmdt, g_qos);
   CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);

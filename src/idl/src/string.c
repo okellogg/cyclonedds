@@ -1,14 +1,12 @@
-/*
- * Copyright(c) 2021 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
 
 /*
  * Locale-independent C runtime functions, like strtoull_l and strtold_l, are
@@ -18,7 +16,7 @@
  * defined. strtoull_l and strtold_l are exported from stdlib.h, again if
  * _GNU_SOURCE is defined.
  *
- * FreeBSD and macOS export newlocale and freelocale from xlocale.h and
+ * freeBSD and macOS export newlocale and freelocale from xlocale.h and
  * export strtoull_l and strtold_l from xlocale.h if stdlib.h is included
  * before.
  *
@@ -36,7 +34,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#if defined _MSC_VER
+#if !defined(__USE_GNU) || !defined(__APPLE__) || !defined(__FreeBSD__)
+  #define __MUSL__
+#endif
+
+#if defined _WIN32
 # include <locale.h>
 typedef _locale_t locale_t;
 #else
@@ -50,6 +52,7 @@ typedef _locale_t locale_t;
 #endif
 
 #include "idl/stream.h"
+#include "idl/heap.h"
 #include "idl/string.h"
 
 static locale_t posix_locale(void);
@@ -57,7 +60,7 @@ static locale_t posix_locale(void);
 #if _WIN32
 int idl_isalnum(int c) { return _isalnum_l(c, posix_locale()); }
 int idl_isalpha(int c) { return _isalpha_l(c, posix_locale()); }
-int idl_isblank(int c) { return _isblank_l(c, posix_locale()); }
+//int idl_isblank(int c) { return _isblank_l(c, posix_locale()); }
 int idl_iscntrl(int c) { return _iscntrl_l(c, posix_locale()); }
 int idl_isgraph(int c) { return _isgraph_l(c, posix_locale()); }
 int idl_islower(int c) { return _islower_l(c, posix_locale()); }
@@ -87,11 +90,11 @@ int idl_isdigit(int chr, int base)
   int num = -1;
   assert(base > 0 && base < 36);
   if (chr >= '0' && chr <= '9')
-    num = chr - '0';
+    num = (char) chr - '0';
   else if (chr >= 'a' && chr <= 'z')
-    num = chr - 'a';
+    num = (char) chr - 'a';
   else if (chr >= 'A' && chr <= 'Z')
-    num = chr - 'A';
+    num = (char) chr - 'A';
   return num != -1 && num < base ? num : -1;
 }
 
@@ -132,18 +135,41 @@ char *idl_strndup(const char *str, size_t len)
   size_t n;
   for (n=0; n < len && str[n]; n++) ;
   assert(n <= len);
-  if (!(s = malloc(n + 1)))
+  if (!(s = idl_malloc(n + 1)))
     return NULL;
   memmove(s, str, n);
   s[n] = '\0';
   return s;
 }
 
+size_t idl_strlcpy(char * __restrict dest, const char * __restrict src, size_t size)
+{
+  size_t srclen;
+
+  assert(dest != NULL);
+  assert(src != NULL);
+
+  /* strlcpy must return the number of bytes that (would) have been written, i.e. the length of src. */
+  srclen = strlen(src);
+  if (size > 0) {
+    size_t len = srclen;
+    if (size <= srclen)
+      len = size - 1;
+    memcpy(dest, src, len);
+    dest[len] = '\0';
+  }
+
+  return srclen;
+}
+
+
 int idl_vsnprintf(char *str, size_t size, const char *fmt, va_list ap)
 {
 #if _WIN32
+#if _MSC_VER
 __pragma(warning(push))
 __pragma(warning(disable: 4996))
+#endif
   int ret;
   va_list ap2;
   /* _vsprintf_p_l supports positional parameters */
@@ -152,7 +178,9 @@ __pragma(warning(disable: 4996))
     ret = _vscprintf_p_l(fmt, posix_locale(), ap2);
   va_end(ap2);
   return ret;
+#if _MSC_VER
 __pragma(warning(pop))
+#endif
 #elif __APPLE__ || __FreeBSD__
   return vsnprintf_l(str, size, posix_locale(), fmt, ap);
 #else
@@ -193,13 +221,13 @@ int idl_asprintf(char **strp, const char *fmt, ...)
 
   if ((ret = idl_vsnprintf(buf, sizeof(buf), fmt, ap1)) >= 0) {
     len = (unsigned int)ret; /* +1 for null byte */
-    if ((str = malloc(len + 1)) == NULL) {
+    if ((str = idl_malloc(len + 1)) == NULL) {
       ret = -1;
     } else if ((ret = idl_vsnprintf(str, len + 1, fmt, ap2)) >= 0) {
       assert(((unsigned int)ret) == len);
       *strp = str;
     } else {
-      free(str);
+      idl_free(str);
     }
   }
 
@@ -208,7 +236,6 @@ int idl_asprintf(char **strp, const char *fmt, ...)
 
   return ret;
 }
-
 int idl_vasprintf(char **strp, const char *fmt, va_list ap)
 {
   int ret;
@@ -224,13 +251,13 @@ int idl_vasprintf(char **strp, const char *fmt, va_list ap)
 
   if ((ret = idl_vsnprintf(buf, sizeof(buf), fmt, ap)) >= 0) {
     len = (unsigned int)ret;
-    if ((str = malloc(len + 1)) == NULL) {
+    if ((str = idl_malloc(len + 1)) == NULL) {
       ret = -1;
     } else if ((ret = idl_vsnprintf(str, len + 1, fmt, ap2)) >= 0) {
       assert(((unsigned int)ret) == len);
       *strp = str;
     } else {
-      free(str);
+      idl_free(str);
     }
   }
 
@@ -243,8 +270,14 @@ unsigned long long idl_strtoull(const char *str, char **endptr, int base)
 {
   assert(str);
   assert(base >= 0 && base <= 36);
-#if _WIN32
+#ifdef __MUSL__
+  return strtoull(str, endptr, base);
+#elif _WIN32
+#if __GNUC__
+  return strtoull(str, endptr, base);
+#else
   return _strtoull_l(str, endptr, base, posix_locale());
+#endif
 #else
   return strtoull_l(str, endptr, base, posix_locale());
 #endif
@@ -254,7 +287,11 @@ long double idl_strtold(const char *str, char **endptr)
 {
   assert(str);
 #if _WIN32
+#if __GNUC__
+  return strtold(str, endptr);
+#else
   return _strtold_l(str, endptr, posix_locale());
+#endif
 #else
   return strtold_l(str, endptr, posix_locale());
 #endif
@@ -319,23 +356,91 @@ FILE *idl_fopen(const char *pathname, const char *mode)
 #endif
 }
 
+int idl_fclose(FILE *fp)
+{
+  return fclose(fp);
+}
+
+
 #if defined _WIN32
-static __declspec(thread) locale_t locale = NULL;
+static DWORD locale = TLS_OUT_OF_INDEXES;
 
-void idl_create_locale(void)
+#if defined __MINGW32__
+_Pragma("GCC diagnostic push")
+_Pragma("GCC diagnostic ignored \"-Wmissing-prototypes\"")
+#endif
+void WINAPI idl_cdtor(PVOID handle, DWORD reason, PVOID reserved)
 {
-  locale = _create_locale(LC_ALL, "C");
-}
+  locale_t loc;
 
-void idl_delete_locale(void)
-{
-  _free_locale(locale);
-  locale = NULL;
+  (void)handle;
+  (void)reason;
+  (void)reserved;
+  switch (reason) {
+    case DLL_PROCESS_ATTACH:
+      if ((locale = TlsAlloc()) == TLS_OUT_OF_INDEXES)
+        goto err_alloc;
+      if (!(loc = _create_locale(LC_ALL, "C")))
+        goto err_locale;
+      if (TlsSetValue(locale, loc))
+        return;
+      _free_locale(loc);
+err_locale:
+      TlsFree(locale);
+err_alloc:
+      abort();
+      /* never reached */
+    case DLL_THREAD_ATTACH:
+      assert(locale != TLS_OUT_OF_INDEXES);
+      if (!(loc = _create_locale(LC_ALL, "C")))
+        abort();
+      if (TlsSetValue(locale, loc))
+        return;
+      _free_locale(loc);
+      abort();
+      break;
+    case DLL_THREAD_DETACH:
+      assert(locale != TLS_OUT_OF_INDEXES);
+      loc = TlsGetValue(locale);
+      if (loc && TlsSetValue(locale, NULL))
+        _free_locale(loc);
+      break;
+    case DLL_PROCESS_DETACH:
+      assert(locale != TLS_OUT_OF_INDEXES);
+      loc = TlsGetValue(locale);
+      if (loc)
+        _free_locale(loc);
+      TlsSetValue(locale, NULL);
+      TlsFree(locale);
+      locale = TLS_OUT_OF_INDEXES;
+      break;
+    default:
+      break;
+  }
 }
+#if defined __MINGW32__
+_Pragma("GCC diagnostic pop")
+#endif
+
+#if defined __MINGW32__
+  PIMAGE_TLS_CALLBACK __crt_xl_tls_callback__ __attribute__ ((section(".CRT$XLZ"))) = idl_cdtor;
+#elif defined _WIN64
+  #pragma comment (linker, "/INCLUDE:_tls_used")
+  #pragma comment (linker, "/INCLUDE:tls_callback_func")
+  #pragma const_seg(".CRT$XLZ")
+  EXTERN_C const PIMAGE_TLS_CALLBACK tls_callback_func = idl_cdtor;
+  #pragma const_seg()
+#else
+  #pragma comment (linker, "/INCLUDE:__tls_used")
+  #pragma comment (linker, "/INCLUDE:_tls_callback_func")
+  #pragma data_seg(".CRT$XLZ")
+  EXTERN_C PIMAGE_TLS_CALLBACK tls_callback_func = idl_cdtor;
+  #pragma data_seg()
+#endif /* _WIN32 */
 
 static locale_t posix_locale(void)
 {
-  return locale;
+  return TlsGetValue(locale);
 }
 #else /* _WIN32 */
 static pthread_key_t key;

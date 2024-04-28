@@ -1,24 +1,23 @@
-/*
- * Copyright(c) 2019 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2019 to 2022 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <stdlib.h>
 
-#include "dds/dds.h"
-#include "CUnit/Test.h"
-#include "config_env.h"
-#include "dds/version.h"
 #include "dds/ddsrt/environ.h"
 #include "dds/ddsrt/heap.h"
 #include "dds/ddsrt/string.h"
 #include "dds/ddsi/ddsi_config.h"
+#include "dds/dds.h"
+#include "dds/version.h"
+#include "CUnit/Test.h"
+#include "config_env.h"
 
 CU_Test(ddsc_domain, get_domainid)
 {
@@ -317,7 +316,6 @@ static void logsink (void *varg, const dds_log_data_t *msg)
     // do by rewriting the {0} to {}
     char *p = strchr (arg->buf[arg->size], '{');
     CU_ASSERT_FATAL (p != NULL);
-    assert (p != NULL); // Clang static analyzer
     p++;
     CU_ASSERT_FATAL (strcmp (p, "}\n") == 0 || strcmp (p, "0}\n") == 0);
     if (*p == '0')
@@ -338,7 +336,11 @@ CU_Test(ddsc_domain_create, raw_config)
      There is a tiny discrepancy in the source information for the tracing flags, which
      is dealt with by rewriting the {0} indicating it is from the first configuration
      source to {}, indicating it is the default to match what the initializer-based
-     version prints. */
+     version prints.
+
+     There is another tiny discrepancy: the autonaming seed will be randomized if unset.
+     We exclude it from comparison.
+  */
 
   dds_entity_t domain;
   struct logsink_arg arg_xml = { .buf = NULL, .capacity = 0, .size = 0 };
@@ -360,14 +362,18 @@ CU_Test(ddsc_domain_create, raw_config)
   CU_ASSERT_FATAL(domain > 0);
   dds_delete (domain);
 
-  dds_set_log_sink (0, NULL);
+  dds_set_trace_sink (0, NULL);
 
   {
+    const char * autonaming_conf_prefix = "config: Domain/General/EntityAutoNaming[@seed]: ";
     size_t i = 0, j = 0;
     while (i < arg_xml.size && j < arg_raw.size)
     {
       if (strcmp (arg_xml.buf[i], arg_raw.buf[j]) != 0)
-        break;
+        if (strncmp (arg_xml.buf[i], autonaming_conf_prefix, strlen(autonaming_conf_prefix)) != 0 ||
+            strncmp (arg_raw.buf[j], autonaming_conf_prefix, strlen(autonaming_conf_prefix)) != 0) {
+          break;
+        }
       i++;
       j++;
     }

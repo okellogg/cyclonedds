@@ -1,14 +1,12 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
 
 #include <string.h>
 
@@ -76,7 +74,7 @@ dds_return_t ddsrt_stat(const char *path, struct ddsrt_stat *buf)
     r = _stat(path, &_buf);
     if (r == 0) {
         buf->stat_mode = _buf.st_mode;
-        buf->stat_size = _buf.st_size;
+        buf->stat_size = (size_t)_buf.st_size;
         buf->stat_mtime = DDS_SECS(_buf.st_mtime);;
         result = DDS_RETCODE_OK;
     } else {

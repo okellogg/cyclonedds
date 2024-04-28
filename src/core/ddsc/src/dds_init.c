@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2022 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
@@ -27,9 +26,8 @@
 #include "dds/ddsi/ddsi_tkmap.h"
 #include "dds/ddsi/ddsi_serdata.h"
 #include "dds/ddsi/ddsi_threadmon.h"
-#include "dds/ddsi/q_entity.h"
-#include "dds/ddsi/q_config.h"
-#include "dds/ddsi/q_gc.h"
+#include "dds/ddsi/ddsi_entity.h"
+#include "dds/ddsi/ddsi_gc.h"
 #include "dds/ddsi/ddsi_domaingv.h"
 #include "dds/version.h"
 
@@ -43,7 +41,8 @@ const struct dds_entity_deriver dds_entity_deriver_cyclonedds = {
   .set_qos = dds_entity_deriver_dummy_set_qos,
   .validate_status = dds_entity_deriver_dummy_validate_status,
   .create_statistics = dds_entity_deriver_dummy_create_statistics,
-  .refresh_statistics = dds_entity_deriver_dummy_refresh_statistics
+  .refresh_statistics = dds_entity_deriver_dummy_refresh_statistics,
+  .invoke_cbs_for_pending_events = dds_entity_deriver_dummy_invoke_cbs_for_pending_events
 };
 
 dds_cyclonedds_entity dds_global;
@@ -56,7 +55,7 @@ static ddsrt_atomic_uint32_t dds_state = DDSRT_ATOMIC_UINT32_INIT (CDDS_STATE_ZE
 
 static void common_cleanup (void)
 {
-  if (thread_states_fini ())
+  if (ddsi_thread_states_fini ())
     dds_handle_server_fini ();
 
   ddsi_iid_fini ();
@@ -75,7 +74,7 @@ static bool cyclonedds_entity_ready (uint32_t s)
   else
   {
     struct dds_handle_link *x;
-    return dds_handle_pin_and_ref (DDS_CYCLONEDDS_HANDLE, &x) == DDS_RETCODE_OK;
+    return dds_handle_pin_and_ref_with_origin (DDS_CYCLONEDDS_HANDLE, false, &x) == DDS_RETCODE_OK;
   }
 }
 
@@ -112,7 +111,7 @@ dds_return_t dds_init (void)
   ddsrt_mutex_init (&dds_global.m_mutex);
   ddsrt_cond_init (&dds_global.m_cond);
   ddsi_iid_init ();
-  thread_states_init (128);
+  ddsi_thread_states_init ();
 
   if (dds_handle_server_init () != DDS_RETCODE_OK)
   {
@@ -121,7 +120,7 @@ dds_return_t dds_init (void)
     goto fail_handleserver;
   }
 
-  dds_entity_init (&dds_global.m_entity, NULL, DDS_KIND_CYCLONEDDS, true, NULL, NULL, 0);
+  dds_entity_init (&dds_global.m_entity, NULL, DDS_KIND_CYCLONEDDS, true, true, NULL, NULL, 0);
   dds_global.m_entity.m_iid = ddsi_iid_gen ();
   dds_handle_repin (&dds_global.m_entity.m_hdllink);
   dds_entity_add_ref_locked (&dds_global.m_entity);

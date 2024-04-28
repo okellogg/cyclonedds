@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2020 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <string.h>
 #include <stdio.h>
 #include "dds/dds.h"
@@ -66,11 +65,11 @@ static DDS_Security_ValidationResult_t test_validate_local_identity_all_ok(
   for (unsigned i = 0; i < participant_qos->property.value._length; i++)
   {
     printf("%s\n", participant_qos->property.value._buffer[i].name);
-    if (!strcmp(participant_qos->property.value._buffer[i].name, "dds.sec.auth.private_key"))
+    if (!strcmp(participant_qos->property.value._buffer[i].name, DDS_SEC_PROP_AUTH_PRIV_KEY))
       private_key = participant_qos->property.value._buffer[i].value;
-    else if (!strcmp(participant_qos->property.value._buffer[i].name, "dds.sec.auth.identity_ca"))
+    else if (!strcmp(participant_qos->property.value._buffer[i].name, DDS_SEC_PROP_AUTH_IDENTITY_CA))
       identity_ca = participant_qos->property.value._buffer[i].value;
-    else if (!strcmp(participant_qos->property.value._buffer[i].name, "dds.sec.auth.identity_certificate"))
+    else if (!strcmp(participant_qos->property.value._buffer[i].name, DDS_SEC_PROP_AUTH_IDENTITY_CERT))
       identity_certificate = participant_qos->property.value._buffer[i].value;
   }
 
@@ -462,7 +461,7 @@ void test_authentication_plugin_release_msg(struct message *msg)
   delete_message(msg);
 }
 
-static struct dds_security_authentication_impl * init_test_authentication_common()
+static struct dds_security_authentication_impl * init_test_authentication_common(void)
 {
   struct dds_security_authentication_impl * impl = ddsrt_malloc(sizeof(*impl));
   memset(impl, 0, sizeof(*impl));

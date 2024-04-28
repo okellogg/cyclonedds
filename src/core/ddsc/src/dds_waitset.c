@@ -1,23 +1,22 @@
-/*
- * Copyright(c) 2006 to 2019 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <assert.h>
 
 #include "dds/ddsrt/heap.h"
 #include "dds/ddsrt/log.h"
 #include "dds__entity.h"
 #include "dds__participant.h"
-#include "dds__querycond.h"
 #include "dds__readcond.h"
 #include "dds__init.h"
+#include "dds__subscriber.h" // only for (de)materializing data_on_readers
 #include "dds/ddsc/dds_rhc.h"
 #include "dds/ddsi/ddsi_iid.h"
 
@@ -32,9 +31,11 @@ static bool is_triggered (struct dds_entity *e)
     case DDS_KIND_WAITSET:
       t = ddsrt_atomic_ld32 (&e->m_status.m_trigger) != 0;
       break;
-    default:
-      t = (ddsrt_atomic_ld32 (&e->m_status.m_status_and_mask) & SAM_STATUS_MASK) != 0;
+    default: {
+      const uint32_t sm = ddsrt_atomic_ld32 (&e->m_status.m_status_and_mask);
+      t = (sm & (sm >> SAM_ENABLED_SHIFT)) != 0;
       break;
+    }
   }
   return t;
 }
@@ -138,7 +139,8 @@ const struct dds_entity_deriver dds_entity_deriver_waitset = {
   .set_qos = dds_entity_deriver_dummy_set_qos,
   .validate_status = dds_entity_deriver_dummy_validate_status,
   .create_statistics = dds_entity_deriver_dummy_create_statistics,
-  .refresh_statistics = dds_entity_deriver_dummy_refresh_statistics
+  .refresh_statistics = dds_entity_deriver_dummy_refresh_statistics,
+  .invoke_cbs_for_pending_events = dds_entity_deriver_dummy_invoke_cbs_for_pending_events
 };
 
 dds_entity_t dds_create_waitset (dds_entity_t owner)
@@ -168,7 +170,7 @@ dds_entity_t dds_create_waitset (dds_entity_t owner)
   }
 
   dds_waitset *waitset = dds_alloc (sizeof (*waitset));
-  dds_entity_t hdl = dds_entity_init (&waitset->m_entity, e, DDS_KIND_WAITSET, false, NULL, NULL, 0);
+  dds_entity_t hdl = dds_entity_init (&waitset->m_entity, e, DDS_KIND_WAITSET, false, true, NULL, NULL, 0);
   ddsrt_mutex_init (&waitset->wait_lock);
   ddsrt_cond_init (&waitset->wait_cond);
   waitset->m_entity.m_iid = ddsi_iid_gen ();
@@ -315,9 +317,20 @@ dds_return_t dds_waitset_attach (dds_entity_t waitset, dds_entity_t entity, dds_
       goto err_scope;
     }
 
+    // Attaching a subscriber to a waitset forces materialization of DATA_ON_READERS
+    // subscribers have no other statuses, so no point in also looking at the status mask
+    // note: no locks held
+    if (dds_entity_kind (e) == DDS_KIND_SUBSCRIBER)
+      dds_subscriber_adjust_materialize_data_on_readers ((dds_subscriber *) e, true);
+
     /* This will fail if given entity is already attached (or deleted). */
     struct dds_waitset_attach_observer_arg attach_arg = { .x = x };
     ret = dds_entity_observer_register (e, ws, dds_waitset_observer, dds_waitset_attach_observer, &attach_arg, dds_waitset_delete_observer);
+
+    // If it failed for a subscriber, undo the DATA_ON_READERS materialize changes
+    // note: no locks held
+    if (ret < 0 && dds_entity_kind (e) == DDS_KIND_SUBSCRIBER)
+      dds_subscriber_adjust_materialize_data_on_readers ((dds_subscriber *) e, false);
 
   err_scope:
     dds_entity_unpin (e);
@@ -351,6 +364,11 @@ dds_return_t dds_waitset_detach (dds_entity_t waitset, dds_entity_t entity)
     else
     {
       ret = dds_entity_observer_unregister (e, ws, true);
+
+      // This waitset no longer requires a subscriber to have a materialized DATA_ON_READERS
+      if (ret >= 0 && dds_entity_kind (e) == DDS_KIND_SUBSCRIBER)
+        dds_subscriber_adjust_materialize_data_on_readers ((dds_subscriber *) e, false);
+
       dds_entity_unpin (e);
     }
 
@@ -388,7 +406,14 @@ dds_return_t dds_waitset_set_trigger (dds_entity_t waitset, bool trigger)
   }
   else
   {
-    dds_entity_trigger_set (ent, trigger);
+    uint32_t oldst;
+    ddsrt_mutex_lock (&ent->m_observers_lock);
+    do {
+      oldst = ddsrt_atomic_ld32 (&ent->m_status.m_trigger);
+    } while (!ddsrt_atomic_cas32 (&ent->m_status.m_trigger, oldst, trigger));
+    if (oldst == 0 && trigger != 0)
+      dds_entity_observers_signal (ent, trigger);
+    ddsrt_mutex_unlock (&ent->m_observers_lock);
     dds_entity_unpin (ent);
     return DDS_RETCODE_OK;
   }

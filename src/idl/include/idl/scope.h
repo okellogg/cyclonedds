@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2021 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #ifndef IDL_SCOPE_H
 #define IDL_SCOPE_H
 
@@ -32,13 +31,16 @@ struct idl_declaration {
     /** introduced through use of non-absolute qualified name */
     IDL_USE_DECLARATION,
     /** enclosing scope, for convenience */
-    IDL_SCOPE_DECLARATION
+    IDL_SCOPE_DECLARATION,
+    /** forward declarator (struct/union) */
+    IDL_FORWARD_DECLARATION
   } kind;
   idl_declaration_t *next;
   const idl_scope_t *local_scope; /**< scope local to declaration */
   idl_name_t *name;
   idl_scoped_name_t *scoped_name;
-  const idl_node_t *node;
+  /* not a reference, used to populate forward declarations */
+  idl_node_t *node;
   idl_scope_t *scope; /**< scope introduced by declaration (optional) */
 };
 
@@ -74,6 +76,7 @@ struct idl_pstate;
 #define IDL_FIND_IGNORE_CASE (1u<<0)
 #define IDL_FIND_IGNORE_IMPORTS (1u<<1)
 #define IDL_FIND_ANNOTATION (1u<<2)
+#define IDL_FIND_SCOPE_DECLARATION (1u<<3)
 
 IDL_EXPORT const idl_declaration_t *
 idl_find(

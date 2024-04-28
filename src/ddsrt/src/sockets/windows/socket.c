@@ -1,28 +1,33 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2022 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <winerror.h>
 
+#include "sockets_priv.h"
 #include "dds/ddsrt/log.h"
 #include "dds/ddsrt/misc.h"
 #include "dds/ddsrt/retcode.h"
-#include "dds/ddsrt/sockets_priv.h"
 #include "dds/ddsrt/time.h"
+
+// Has to be included after most of windows has been included, it seems
+#include <Mswsock.h>
 
 #ifdef ddsrt_select
 #undef ddsrt_select /* See sockets.h for details. */
 #endif
+
+DDSRT_WARNING_GNUC_OFF(missing-prototypes)
+DDSRT_WARNING_CLANG_OFF(missing-prototypes)
 
 void
 ddsrt_winsock_init(void)
@@ -52,11 +57,13 @@ ddsrt_winsock_fini(void)
   WSACleanup();
 }
 
+DDSRT_WARNING_GNUC_ON(missing-prototypes)
+DDSRT_WARNING_CLANG_ON(missing-prototypes)
+
 dds_return_t
 ddsrt_socket(ddsrt_socket_t *sockptr, int domain, int type, int protocol)
 {
   int err;
-  dds_return_t ret = DDS_RETCODE_OK;
   ddsrt_socket_t sock = DDSRT_INVALID_SOCKET;
 
   assert(sockptr != NULL);
@@ -91,6 +98,43 @@ ddsrt_socket(ddsrt_socket_t *sockptr, int domain, int type, int protocol)
   }
 
   return DDS_RETCODE_ERROR;
+}
+
+void
+ddsrt_socket_ext_init(
+  ddsrt_socket_ext_t *sockext,
+  ddsrt_socket_t sock)
+{
+  sockext->sock = sock;
+  // It is not clear to me whether each socket gets the same WSARecvMsg function pointer
+  // so we have to request it for every socket.  It is clear to me that one mustn't try it
+  // on a SOCK_STREAM socket
+  int type;
+  int length = sizeof (int);
+  getsockopt (sock, SOL_SOCKET, SO_TYPE, (char *) &type, &length);
+  if (type == SOCK_STREAM)
+  {
+    sockext->wsarecvmsg = 0;
+  }
+  else
+  {
+    GUID wsarecvmsg_guid = WSAID_WSARECVMSG;
+    DWORD dwBytesReturned = 0;
+    if (WSAIoctl (sockext->sock, SIO_GET_EXTENSION_FUNCTION_POINTER,
+                  &wsarecvmsg_guid, sizeof (wsarecvmsg_guid),
+                  &sockext->wsarecvmsg, sizeof (sockext->wsarecvmsg),
+                  &dwBytesReturned, NULL, NULL) != 0)
+    {
+      sockext->wsarecvmsg = 0;
+    }
+  }
+}
+
+void
+ddsrt_socket_ext_fini(
+  ddsrt_socket_ext_t *sockext)
+{
+  (void)sockext;
 }
 
 dds_return_t
@@ -346,9 +390,10 @@ ddsrt_getsockopt(
       return DDS_RETCODE_NO_NETWORK;
     case WSAEFAULT:
     case WSAEINVAL:
-    case WSAENOPROTOOPT:
     case WSAENOTSOCK:
       return DDS_RETCODE_BAD_PARAMETER;
+    case WSAENOPROTOOPT:
+      return DDS_RETCODE_UNSUPPORTED;
     case WSAEINPROGRESS:
       return DDS_RETCODE_TRY_AGAIN;
     default:
@@ -392,9 +437,10 @@ ddsrt_setsockopt(
       return DDS_RETCODE_NO_NETWORK;
     case WSAEFAULT:
     case WSAEINVAL:
-    case WSAENOPROTOOPT:
     case WSAENOTSOCK:
       return DDS_RETCODE_BAD_PARAMETER;
+    case WSAENOPROTOOPT:
+      return DDS_RETCODE_UNSUPPORTED;
     case WSAEINPROGRESS:
       return DDS_RETCODE_IN_PROGRESS;
     default:
@@ -416,7 +462,7 @@ ddsrt_setsocknonblocking(
    * if mode != 0, non-blocking is enabled. */
   mode = nonblock ? 1 : 0;
 
-  if (ioctlsocket(sock, FIONBIO, &mode) != SOCKET_ERROR)
+  if (ioctlsocket(sock, (long)FIONBIO, &mode) != SOCKET_ERROR)
     return DDS_RETCODE_OK;
 
   err = WSAGetLastError();
@@ -490,45 +536,82 @@ ddsrt_recv(
   return recv_error_to_retcode(WSAGetLastError());
 }
 
+/* Compile time check to ensure iovec matches WSABUF. */
+struct iovec_matches_WSABUF {
+  char sizeof_matches[sizeof(ddsrt_iovec_t) == sizeof(WSABUF) ? 1 : -1];
+  char base_off_matches[offsetof(ddsrt_iovec_t, iov_base) == offsetof(WSABUF, buf) ? 1 : -1];
+  char base_size_matches[sizeof(((ddsrt_iovec_t *)8)->iov_base) == sizeof(((WSABUF *)8)->buf) ? 1 : -1];
+  char len_off_matches[offsetof(ddsrt_iovec_t, iov_len) == offsetof(WSABUF, len) ? 1 : -1];
+  char len_size_matches[sizeof(((ddsrt_iovec_t *)8)->iov_len) == sizeof(((WSABUF *)8)->len) ? 1 : -1];
+};
+
 dds_return_t
 ddsrt_recvmsg(
-  ddsrt_socket_t sock,
+  const ddsrt_socket_ext_t *sockext,
   ddsrt_msghdr_t *msg,
   int flags,
   ssize_t *rcvd)
 {
-  int err, n;
-
   assert(msg != NULL);
-  assert(msg->msg_iovlen == 1);
-  assert(msg->msg_controllen == 0);
-
-  msg->msg_flags = 0;
-  n = recvfrom(
-    sock,
-    msg->msg_iov[0].iov_base,
-    msg->msg_iov[0].iov_len,
-    flags,
-    msg->msg_name,
-   &msg->msg_namelen);
-
-  if (n != -1) {
-    *rcvd = n;
-    return DDS_RETCODE_OK;
+  if (sockext->wsarecvmsg)
+  {
+    WSAMSG wsamsg = {
+      .name = (LPSOCKADDR) msg->msg_name,
+      .namelen = (INT) msg->msg_namelen,
+      .lpBuffers = (LPWSABUF) msg->msg_iov,
+      .dwBufferCount = (DWORD) msg->msg_iovlen,
+      .Control = {
+        .len = (ULONG) msg->msg_controllen,
+        .buf = (CHAR *) msg->msg_control,
+      },
+      .dwFlags = 0
+    };
+    DWORD n;
+    if (sockext->wsarecvmsg (sockext->sock, &wsamsg, &n, NULL, 0) != 0)
+    {
+      int err = WSAGetLastError();
+      return recv_error_to_retcode(err);
+    }
+    else
+    {
+      msg->msg_flags = wsamsg.dwFlags;
+      msg->msg_controllen = wsamsg.Control.len;
+      *rcvd = (ssize_t) n;
+      return DDS_RETCODE_OK;
+    }
   }
+  else
+  {
+    assert(msg->msg_iovlen == 1);
+    assert(msg->msg_iov[0].iov_len < INT_MAX);
+    msg->msg_flags = 0;
+    int n = recvfrom(
+            sockext->sock,
+            msg->msg_iov[0].iov_base,
+            (int)msg->msg_iov[0].iov_len,
+            flags,
+            msg->msg_name,
+            &msg->msg_namelen);
+    msg->msg_controllen = 0;
 
-  err = WSAGetLastError();
-  if (err == WSAEMSGSIZE) {
-    /* Windows returns an error for too-large messages, UNIX expects the
-       original size and the MSG_TRUNC flag. MSDN states it is truncated, which
-       presumably means it returned as much of the message as it could. Return
-       that the message was one byte larger than the available space and set
-       MSG_TRUNC. */
-    *rcvd = msg->msg_iov[0].iov_len + 1;
-    msg->msg_flags |= MSG_TRUNC;
+    if (n != -1) {
+      *rcvd = n;
+      return DDS_RETCODE_OK;
+    }
+
+    int err = WSAGetLastError();
+    if (err == WSAEMSGSIZE) {
+      /* Windows returns an error for too-large messages, UNIX expects the
+         original size and the MSG_TRUNC flag. MSDN states it is truncated, which
+         presumably means it returned as much of the message as it could. Return
+         that the message was one byte larger than the available space and set
+         MSG_TRUNC. */
+      *rcvd = msg->msg_iov[0].iov_len + 1;
+      msg->msg_flags |= MSG_TRUNC;
+    }
+
+    return recv_error_to_retcode(err);
   }
-
-  return recv_error_to_retcode(err);
 }
 
 static dds_return_t
@@ -599,15 +682,6 @@ ddsrt_send(
   return send_error_to_retcode(WSAGetLastError());
 }
 
-/* Compile time check to ensure iovec matches WSABUF. */
-struct iovec_matches_WSABUF {
-  char sizeof_matches[sizeof(ddsrt_iovec_t) == sizeof(WSABUF) ? 1 : -1];
-  char base_off_matches[offsetof(ddsrt_iovec_t, iov_base) == offsetof(WSABUF, buf) ? 1 : -1];
-  char base_size_matches[sizeof(((ddsrt_iovec_t *)8)->iov_base) == sizeof(((WSABUF *)8)->buf) ? 1 : -1];
-  char len_off_matches[offsetof(ddsrt_iovec_t, iov_len) == offsetof(WSABUF, len) ? 1 : -1];
-  char len_size_matches[sizeof(((ddsrt_iovec_t *)8)->iov_len) == sizeof(((WSABUF *)8)->len) ? 1 : -1];
-};
-
 dds_return_t
 ddsrt_sendmsg(
   ddsrt_socket_t sock,
@@ -621,12 +695,14 @@ ddsrt_sendmsg(
   assert(msg != NULL);
   assert(msg->msg_controllen == 0);
 
+  // msg_iov -> WSABUF* cast validity is checked by compile-time
+  // checks defined above in "struct iovec_matches_WSABUF"
   ret = WSASendTo(
         sock,
         (WSABUF *)msg->msg_iov,
         (DWORD)msg->msg_iovlen,
         &n,
-        flags,
+        (DWORD)flags,
         (SOCKADDR *)msg->msg_name,
         msg->msg_namelen,
         NULL,
@@ -645,8 +721,7 @@ ddsrt_select(
   fd_set *readfds,
   fd_set *writefds,
   fd_set *errorfds,
-  dds_duration_t reltime,
-  int32_t *ready)
+  dds_duration_t reltime)
 {
   int err;
   int32_t n;
@@ -655,10 +730,8 @@ ddsrt_select(
   (void)nfds;
 
   tvp = ddsrt_duration_to_timeval_ceil(reltime, &tv);
-  if ((n = select(-1, readfds, writefds, errorfds, tvp)) != SOCKET_ERROR) {
-    *ready = n;
-    return (n == 0 ? DDS_RETCODE_TIMEOUT : DDS_RETCODE_OK);
-  }
+  if ((n = select(-1, readfds, writefds, errorfds, tvp)) != SOCKET_ERROR)
+    return (n == 0 ? DDS_RETCODE_TIMEOUT : n);
 
   err = WSAGetLastError();
   assert(err != WSANOTINITIALISED);

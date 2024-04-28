@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2021 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #ifndef IDL_PRINT_H
 #define IDL_PRINT_H
 
@@ -18,7 +17,7 @@
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdlib.h>
-#if defined(_MSC_VER)
+#if defined(_WIN32)
 # include <malloc.h>
 #elif defined(__GNUC__) || (defined(__clang__) && __clang_major__ >= 2)
 # if !defined(__FreeBSD__)
@@ -29,6 +28,7 @@
 #endif
 
 #include "idl/export.h"
+#include "processor.h"
 
 typedef int(*idl_print_t)(char *, size_t, const void *, void *);
 
@@ -77,5 +77,11 @@ IDL_EXPORT int idl_print__(
 
 #define IDL_PRINT(strp_, print_, ...) \
   IDL_PRINT__(strp_, print_, __VA_ARGS__, )
+
+IDL_EXPORT int
+print_type(char *str, size_t size, const void *ptr, void *user_data);
+
+IDL_EXPORT int
+print_scoped_name(char *str, size_t size, const void *ptr, void *user_data);
 
 #endif /* IDL_PRINT_H */

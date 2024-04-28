@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <assert.h>
 #include <errno.h>
 #include <time.h>
@@ -72,7 +71,7 @@ ddsrt_etime_t ddsrt_time_elapsed(void)
   return (ddsrt_etime_t) { (int64_t) clock_gettime_nsec_np (CLOCK_MONOTONIC_RAW) };
 #else
   /* Elapsed time clock not (yet) supported on this platform. */
-  dds_mtime_t mt = ddsrt_time_monotonic();
+  ddsrt_mtime_t mt = ddsrt_time_monotonic();
   return (ddsrt_etime_t) { mt.v };
 #endif
 }

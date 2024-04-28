@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 
 /** @file
  *
@@ -77,6 +76,12 @@ extern "C" {
 #define DDS_LC_RHC (65536u)
 /** Include content in traces. */
 #define DDS_LC_CONTENT (131072u)
+/** Output full dump of malformed messages as warnings */
+#define DDS_LC_MALFORMED (262144u)
+/** Debug/trace messages related to sysdef parser. */
+#define DDS_LC_SYSDEF (524288u)
+/** Debug/trace messages related to qos provider. */
+#define DDS_LC_QOSPROV (1048576u)
 /** All common trace categories. */
 #define DDS_LC_ALL \
     (DDS_LC_FATAL | DDS_LC_ERROR | DDS_LC_WARNING | DDS_LC_INFO | \
@@ -112,7 +117,7 @@ typedef struct {
 } dds_log_data_t;
 
 /** Function signature that log and trace callbacks must adhere too. */
-typedef void (*dds_log_write_fn_t) (void *, const dds_log_data_t *);
+typedef void (*dds_log_write_fn_t) (void * p, const dds_log_data_t * d);
 
 /** Semi-opaque type for log/trace configuration. */
 struct ddsrt_log_cfg_common {
@@ -140,7 +145,7 @@ typedef struct ddsrt_log_cfg {
   } u;
 } ddsrt_log_cfg_t;
 
-DDS_EXPORT extern uint32_t *const dds_log_mask;
+extern uint32_t *const dds_log_mask;
 
 /**
  * @brief Get currently enabled log and trace categories.
@@ -165,14 +170,14 @@ dds_set_log_mask(
 /**
  * @private
  */
-DDS_EXPORT void
+void
 dds_set_log_file(
     FILE *file);
 
 /**
  * @private
  */
-DDS_EXPORT void
+void
 dds_set_trace_file(
     FILE *file);
 
@@ -192,7 +197,7 @@ dds_set_trace_file(
  * @param[in]  userdata  User specified data passed along with each invocation
  *                       of callback.
  */
-DDS_EXPORT void
+void
 dds_set_log_sink(
     dds_log_write_fn_t callback,
     void *userdata);
@@ -213,7 +218,7 @@ dds_set_log_sink(
  * @param[in]  userdata  User specified data passed along with each invocation
  *                       of callback.
  */
-DDS_EXPORT void
+void
 dds_set_trace_sink(
     dds_log_write_fn_t callback,
     void *userdata);
@@ -242,7 +247,7 @@ dds_set_trace_sink(
  * @param[in]  log_fp         File for default sink.
  * @param[in]  trace_fp       File for default sink.
  */
-DDS_EXPORT void
+void
 dds_log_cfg_init(
     struct ddsrt_log_cfg *cfg,
     uint32_t domid,
@@ -257,16 +262,16 @@ dds_log_cfg_init(
  * Direct use of #dds_log is discouraged. Use #DDS_CINFO, #DDS_CWARNING,
  * #DDS_CERROR, #DDS_CTRACE or #DDS_CLOG instead.
  */
-DDS_EXPORT void
+void
 dds_log_cfg(
     const struct ddsrt_log_cfg *cfg,
-    uint32_t prio,
+    uint32_t cat,
     const char *file,
     uint32_t line,
     const char *func,
     const char *fmt,
     ...)
-  ddsrt_attribute_format((__printf__, 6, 7));
+  ddsrt_attribute_format_printf(6, 7);
 
 /**
  * @brief Write a log or trace message to the global configuration but with
@@ -277,16 +282,16 @@ dds_log_cfg(
  *
  * Direct use of #dds_log_id is discouraged. Use #DDS_ILOG instead.
  */
-DDS_EXPORT void
+void
 dds_log_id(
-    uint32_t prio,
+    uint32_t cat,
     uint32_t domid,
     const char *file,
     uint32_t line,
     const char *func,
     const char *fmt,
     ...)
-  ddsrt_attribute_format((__printf__, 6, 7));
+  ddsrt_attribute_format_printf(6, 7);
 
 /**
  * @brief Write a log or trace message to the global log/trace.
@@ -298,13 +303,13 @@ dds_log_id(
  */
 DDS_EXPORT void
 dds_log(
-    uint32_t prio,
+    uint32_t cat,
     const char *file,
     uint32_t line,
     const char *func,
     const char *fmt,
     ...)
-  ddsrt_attribute_format((__printf__, 5, 6));
+  ddsrt_attribute_format_printf(5, 6);
 
 /**
  * @brief Undecorated function name of the current function.

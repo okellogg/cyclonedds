@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2022 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #ifndef DDSI_CONFIG_H
 #define DDSI_CONFIG_H
 
@@ -17,21 +16,16 @@
 #include "dds/export.h"
 #include "dds/features.h"
 #include "dds/ddsrt/sched.h"
+#include "dds/ddsrt/random.h"
 #include "dds/ddsi/ddsi_portmapping.h"
 #include "dds/ddsi/ddsi_locator.h"
+#include "dds/ddsi/ddsi_xqos.h"
 
 #if defined (__cplusplus)
 extern "C" {
 #endif
 
 struct ddsi_config;
-
-/**
- * @brief Default-initialize a configuration (unstable)
- *
- * @param[out]  cfg The configuration struct to be initialized.
- */
-DDS_EXPORT void ddsi_config_init_default (struct ddsi_config *cfg);
 
 enum ddsi_standards_conformance {
   DDSI_SC_PEDANTIC,
@@ -60,8 +54,20 @@ enum ddsi_boolean_default {
   DDSI_BOOLDEF_TRUE
 };
 
+/* deprecated shm log level */
+enum ddsi_shm_loglevel {
+  DDSI_SHM_OFF = 0,
+  DDSI_SHM_FATAL,
+  DDSI_SHM_ERROR,
+  DDSI_SHM_WARN,
+  DDSI_SHM_INFO,
+  DDSI_SHM_DEBUG,
+  DDSI_SHM_VERBOSE
+};
+
 #define DDSI_PARTICIPANT_INDEX_AUTO -1
 #define DDSI_PARTICIPANT_INDEX_NONE -2
+#define DDSI_PARTICIPANT_INDEX_DEFAULT -3
 
 /* ddsi_config_listelem must be an overlay for all used listelem types */
 struct ddsi_config_listelem {
@@ -69,11 +75,21 @@ struct ddsi_config_listelem {
 };
 
 #ifdef DDS_HAS_NETWORK_PARTITIONS
+struct ddsi_networkpartition_address {
+  struct ddsi_networkpartition_address *next;
+  ddsi_locator_t loc;
+};
+
 struct ddsi_config_networkpartition_listelem {
   struct ddsi_config_networkpartition_listelem *next;
   char *name;
   char *address_string;
-  struct addrset *as;
+  char *interface_names;
+  struct ddsi_networkpartition_address *uc_addresses;
+  struct ddsi_networkpartition_address *asm_addresses;
+#ifdef DDS_HAS_SSM
+  struct ddsi_networkpartition_address *ssm_addresses;
+#endif
 };
 
 struct ddsi_config_ignoredpartition_listelem {
@@ -89,25 +105,6 @@ struct ddsi_config_partitionmapping_listelem {
 };
 #endif /* DDS_HAS_NETWORK_PARTITIONS */
 
-#ifdef DDS_HAS_NETWORK_CHANNELS
-struct ddsi_config_channel_listelem {
-  struct ddsi_config_channel_listelem *next;
-  char   *name;
-  int    priority;
-  int64_t resolution;
-#ifdef DDS_HAS_BANDWIDTH_LIMITING
-  uint32_t data_bandwidth_limit;
-  uint32_t auxiliary_bandwidth_limit;
-#endif
-  int    diffserv_field;
-  struct thread_state1 *channel_reader_ts;  /* keeping an handle to the running thread for this channel */
-  struct nn_dqueue *dqueue; /* The handle of teh delivery queue servicing incoming data for this channel*/
-  struct xeventq *evq; /* The handle of the event queue servicing this channel*/
-  uint32_t queueId; /* the index of the networkqueue serviced by this channel*/
-  struct ddsi_tran_conn * transmit_conn; /* the connection used for sending data out via this channel */
-};
-#endif /* DDS_HAS_NETWORK_CHANNELS */
-
 struct ddsi_config_maybe_int32 {
   int isdefault;
   int32_t value;
@@ -116,6 +113,11 @@ struct ddsi_config_maybe_int32 {
 struct ddsi_config_maybe_uint32 {
   int isdefault;
   uint32_t value;
+};
+
+struct ddsi_config_maybe_duration {
+  int isdefault;
+  dds_duration_t value;
 };
 
 struct ddsi_config_thread_properties_listelem {
@@ -156,7 +158,8 @@ enum ddsi_transport_selector {
   DDSI_TRANS_UDP6,
   DDSI_TRANS_TCP,
   DDSI_TRANS_TCP6,
-  DDSI_TRANS_RAWETH
+  DDSI_TRANS_RAWETH,
+  DDSI_TRANS_NONE /* FIXME: see FIXME above ... :( */
 };
 
 enum ddsi_many_sockets_mode {
@@ -178,6 +181,7 @@ struct ddsi_authentication_properties {
   char *private_key;
   char *password;
   char *trusted_ca_dir;
+  char *crl;
   int include_optional_fields;
 };
 
@@ -201,17 +205,62 @@ struct ddsi_config_omg_security_listelem {
 };
 #endif /* DDS_HAS_SECURITY */
 
-#ifdef DDS_HAS_SSL
+#ifdef DDS_HAS_TCP_TLS
 struct ddsi_config_ssl_min_version {
   int major;
   int minor;
 };
 #endif
 
+struct ddsi_config_socket_buf_size {
+  struct ddsi_config_maybe_uint32 min, max;
+};
+
+struct ddsi_config_network_interface {
+  int automatic;
+  char *name;
+  char *address;
+  int prefer_multicast;
+  int presence_required;
+  enum ddsi_boolean_default multicast;
+  struct ddsi_config_maybe_int32 priority;
+  uint32_t allow_multicast; // no need for a "maybe" type: DDSI_AMC_DEFAULT takes care of that
+};
+
+struct ddsi_config_network_interface_listelem {
+  struct ddsi_config_network_interface_listelem *next;
+  struct ddsi_config_network_interface cfg;
+};
+
+enum ddsi_config_entity_naming_mode {
+  DDSI_ENTITY_NAMING_DEFAULT_EMPTY,
+  DDSI_ENTITY_NAMING_DEFAULT_FANCY
+};
+
+struct ddsi_config_psmx {
+  char *name;
+  char *library;
+  char *config;
+  struct ddsi_config_maybe_int32 priority;
+};
+
+struct ddsi_config_psmx_listelem {
+  struct ddsi_config_psmx_listelem *next;
+  struct ddsi_config_psmx cfg;
+};
+
 /* Expensive checks (compiled in when NDEBUG not defined, enabled only if flag set in xchecks) */
 #define DDSI_XCHECK_WHC 1u
 #define DDSI_XCHECK_RHC 2u
 #define DDSI_XCHECK_XEV 4u
+
+/**
+ * @brief Default-initialize a configuration (unstable)
+ * @component config
+ *
+ * @param[out]  cfg The configuration struct to be initialized.
+ */
+DDS_EXPORT void ddsi_config_init_default (struct ddsi_config *cfg);
 
 struct ddsi_config
 {
@@ -220,15 +269,22 @@ struct ddsi_config
   uint32_t enabled_xchecks;
   char *pcap_file;
 
-  char *networkAddressString;
+  /* interfaces */
+  struct ddsi_config_network_interface_listelem *network_interfaces;
+  struct ddsi_config_psmx_listelem *psmx_instances;
+
+  /* deprecated interface support */
+  char *depr_networkAddressString;
+  int depr_prefer_multicast;
+  char *depr_assumeMulticastCapable;
+
   char **networkRecvAddressStrings;
+  uint32_t allowMulticast;
   char *externalAddressString;
   char *externalMaskString;
   FILE *tracefp;
   char *tracefile;
   int tracingAppendToFile;
-  uint32_t allowMulticast;
-  int prefer_multicast;
   enum ddsi_transport_selector transport_selector;
   enum ddsi_boolean_default compat_use_ipv6;
   enum ddsi_boolean_default compat_tcp_enable;
@@ -241,8 +297,7 @@ struct ddsi_config
   int maxAutoParticipantIndex;
   char *spdpMulticastAddressString;
   char *defaultMulticastAddressString;
-  char *assumeMulticastCapable;
-  int64_t spdp_interval;
+  struct ddsi_config_maybe_duration spdp_interval;
   int64_t spdp_response_delay_max;
   int64_t lease_duration;
   int64_t const_hb_intv_sched;
@@ -256,7 +311,6 @@ struct ddsi_config
   int noprogress_log_stacktraces;
   int64_t liveliness_monitoring_interval;
   int prioritize_retransmit;
-  int xpack_send_async;
   enum ddsi_boolean_default multiple_recv_threads;
   unsigned recv_thread_stop_maxretries;
 
@@ -270,6 +324,7 @@ struct ddsi_config
   uint32_t max_rexmit_msg_size;
   uint32_t init_transmit_extra_pct;
   uint32_t max_rexmit_burst_size;
+  uint32_t max_frags_in_rexmit_of_sample;
 
   int publish_uc_locators; /* Publish discovery unicast locators */
   int enable_uc_locators; /* If false, don't even try to create a unicast socket */
@@ -285,7 +340,7 @@ struct ddsi_config
   int64_t tcp_write_timeout;
   int tcp_use_peeraddr_for_unicast;
 
-#ifdef DDS_HAS_SSL
+#ifdef DDS_HAS_TCP_TLS
   /* SSL support for TCP */
   int ssl_enable;
   int ssl_verify;
@@ -298,18 +353,14 @@ struct ddsi_config
   struct ddsi_config_ssl_min_version ssl_min_version;
 #endif
 
-#ifdef DDS_HAS_NETWORK_CHANNELS
-  struct ddsi_config_channel_listelem *channels;
-  struct ddsi_config_channel_listelem *max_channel; /* channel with highest prio; always computed */
-#endif /* DDS_HAS_NETWORK_CHANNELS */
 #ifdef DDS_HAS_NETWORK_PARTITIONS
   struct ddsi_config_networkpartition_listelem *networkPartitions;
   unsigned nof_networkPartitions;
   struct ddsi_config_ignoredpartition_listelem *ignoredPartitions;
   struct ddsi_config_partitionmapping_listelem *partitionMappings;
 #endif /* DDS_HAS_NETWORK_PARTITIONS */
+  enum ddsi_boolean_default add_localhost_to_peers;
   struct ddsi_config_peer_listelem *peers;
-  struct ddsi_config_peer_listelem *peers_group;
   struct ddsi_config_thread_properties_listelem *thread_properties;
 
   /* debug/test/undoc features: */
@@ -318,7 +369,6 @@ struct ddsi_config
   uint32_t rbuf_size;                /* << size of a single receiver buffer */
   enum ddsi_besmode besmode;
   int meas_hb_to_ack_latency;
-  int unicast_response_to_spdp_messages;
   int synchronous_delivery_priority_threshold;
   int64_t synchronous_delivery_latency_bound;
 
@@ -337,24 +387,20 @@ struct ddsi_config
   uint32_t max_participants;
   int64_t writer_linger_duration;
   int multicast_ttl;
-  struct ddsi_config_maybe_uint32 socket_min_rcvbuf_size;
-  uint32_t socket_min_sndbuf_size;
+  struct ddsi_config_socket_buf_size socket_rcvbuf_size;
+  struct ddsi_config_socket_buf_size socket_sndbuf_size;
   int64_t ack_delay;
   int64_t nack_delay;
   int64_t preemptive_ack_delay;
-  int64_t schedule_time_rounding;
   int64_t auto_resched_nack_delay;
   int64_t ds_grace_period;
-#ifdef DDS_HAS_BANDWIDTH_LIMITING
-  uint32_t auxiliary_bandwidth_limit; /* bytes/second */
-#endif
   uint32_t max_queued_rexmit_bytes;
   unsigned max_queued_rexmit_msgs;
-  unsigned ddsi2direct_max_threads;
   int late_ack_mode;
   int retry_on_reject_besteffort;
   int generate_keyhash;
   uint32_t max_sample_size;
+  bool extended_packet_info;
 
   /* compability options */
   enum ddsi_standards_conformance standards_conformance;
@@ -373,10 +419,20 @@ struct ddsi_config
 
   int use_multicast_if_mreqn;
   struct ddsi_config_prune_deleted_ppant prune_deleted_ppant;
+  int redundant_networking;
 
 #ifdef DDS_HAS_SECURITY
   struct ddsi_config_omg_security_listelem *omg_security_configuration;
 #endif
+
+  /* deprecated shm options */
+  int enable_shm;
+  char *shm_locator;
+  char *iceoryx_service;
+  enum ddsi_shm_loglevel shm_log_lvl;
+
+  enum ddsi_config_entity_naming_mode entity_naming_mode;
+  ddsrt_prng_seed_t entity_naming_seed;
 
 #if defined (__cplusplus)
 public:
@@ -385,6 +441,12 @@ public:
   }
 #endif
 };
+
+/** @component config */
+struct ddsi_cfgst *ddsi_config_init (const char *config, struct ddsi_config *cfg, uint32_t domid) ddsrt_nonnull((1,2));
+
+/** @component config */
+DDS_EXPORT void ddsi_config_fini (struct ddsi_cfgst *cfgst);
 
 #if defined (__cplusplus)
 }

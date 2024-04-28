@@ -1,5 +1,5 @@
 #
-# Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
+# Copyright(c) 2006 to 2021 ZettaScale Technology and others
 #
 # This program and the accompanying materials are made available under the
 # terms of the Eclipse Public License v. 2.0 which is available at
@@ -12,17 +12,28 @@
 include(CUnit)
 
 set(ddsi_test_sources
+    "ipaddr.c"
     "locators.c"
     "plist_generic.c"
     "plist.c"
-    "mem_ser.h")
+    "plist_leasedur.c"
+    "pmd_message.c"
+    "radmin.c"
+    "sysdeps.c"
+    "wraddrset.c")
 
 if(ENABLE_SECURITY)
   set(ddsi_test_sources ${ddsi_test_sources} "security_msg.c")
 endif()
 
 add_cunit_executable(cunit_ddsi ${ddsi_test_sources})
+
+# need DDSC private header files only for dds_global
 target_include_directories(
   cunit_ddsi PRIVATE
-  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../ddsi/include/>")
+    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../ddsc/src>"
+    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../ddsi/include>"
+    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../ddsi/src>"
+    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../cdr/include>"
+    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../cdr/test>")
 target_link_libraries(cunit_ddsi PRIVATE ddsc)

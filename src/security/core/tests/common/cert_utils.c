@@ -1,14 +1,12 @@
-/*
- * Copyright(c) 2006 to 2020 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2020 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
 
 #include <stdlib.h>
 #include <string.h>
@@ -27,8 +25,8 @@ static X509 * get_x509(int not_valid_before, int not_valid_after, const char * c
   X509 * cert = X509_new ();
   CU_ASSERT_FATAL (cert != NULL);
   ASN1_INTEGER_set (X509_get_serialNumber (cert), 1);
-  X509_gmtime_adj (X509_get_notBefore (cert), not_valid_before);
-  X509_gmtime_adj (X509_get_notAfter (cert), not_valid_after);
+  X509_gmtime_adj (X509_getm_notBefore (cert), not_valid_before);
+  X509_gmtime_adj (X509_getm_notAfter (cert), not_valid_after);
 
   X509_NAME * name = X509_get_subject_name (cert);
   X509_NAME_add_entry_by_txt (name, "C",  MBSTRING_ASC, (unsigned char *) "NL", -1, -1, 0);
@@ -44,6 +42,7 @@ static char * get_x509_data(X509 * cert)
   BIO *output_bio = BIO_new (BIO_s_mem ());
   if (!PEM_write_bio_X509 (output_bio, cert)) {
     printf ("Error writing certificate\n");
+    ERR_print_errors_fp (stderr);
     CU_ASSERT_FATAL (false);
   }
 
@@ -87,7 +86,7 @@ char * generate_ca(const char *ca_name, const char * ca_priv_key_str, int not_va
 
   X509_set_pubkey (ca_cert, ca_priv_key);
   X509_set_issuer_name (ca_cert, X509_get_subject_name (ca_cert)); /* self-signed */
-  X509_sign (ca_cert, ca_priv_key, EVP_sha1 ());
+  X509_sign (ca_cert, ca_priv_key, EVP_sha256 ());
   char * output = get_x509_data (ca_cert);
 
   EVP_PKEY_free (ca_priv_key);

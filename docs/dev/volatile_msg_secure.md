@@ -5,8 +5,8 @@
 It is expected to have some knowledge of DDSI builtin (security) endpoints.
 
 ```cpp
-#define NN_ENTITYID_P2P_BUILTIN_PARTICIPANT_VOLATILE_SECURE_WRITER 0xff0202c3
-#define NN_ENTITYID_P2P_BUILTIN_PARTICIPANT_VOLATILE_SECURE_READER 0xff0202c4
+#define DDSI_ENTITYID_P2P_BUILTIN_PARTICIPANT_VOLATILE_SECURE_WRITER 0xff0202c3
+#define DDSI_ENTITYID_P2P_BUILTIN_PARTICIPANT_VOLATILE_SECURE_READER 0xff0202c4
 ```
 These builtin endpoints have caused about the biggest code change in ddsi, regarding security.
 
@@ -56,13 +56,13 @@ This only depicts an overview. Some details will have been omitted.
 
 ### Writing
 
-The function ```write_crypto_exchange_message()``` takes care of generating the right sample information and pass it on to ```write_sample_p2p_wrlock_held()```.
+The function ```write_crypto_exchange_message()``` takes care of generating the right sample information and pass it on to ```ddsi_write_sample_p2p_wrlock_held()```.
 
-A proxy reader can now have a filter callback function (```proxy_reader::filter```). This indicates (on the writer side) if a sample will be accepted by the actual reader or not. This could be made more generic for proper 'writer side' content filter implementation. However, now it'll only be used by ParticipantVolatileMessageSecure and the filter is hardcoded to ```volatile_secure_data_filter()```.
+A proxy reader can now have a filter callback function (```proxy_reader::filter```). This indicates (on the writer side) if a sample will be accepted by the actual reader or not. This could be made more generic for proper 'writer side' content filter implementation. However, now it'll only be used by ParticipantVolatileMessageSecure and the filter is hardcoded to ```ddsi_volatile_secure_data_filter()```.
 
-So, if ```write_sample_p2p_wrlock_held()``` is called with a proxy reader with a filter, it will get 'send/acked sequences' information between the writer and proxy reader. This is used to determine if gap information has to be send alongside the sample.
+So, if ```ddsi_write_sample_p2p_wrlock_held()``` is called with a proxy reader with a filter, it will get 'send/acked sequences' information between the writer and proxy reader. This is used to determine if gap information has to be send alongside the sample.
 
-Then, ```write_sample_p2p_wrlock_held()``` will enqueue the sample.
+Then, ```ddsi_write_sample_p2p_wrlock_held()``` will enqueue the sample.
 
 Just before the submessage is added to the rtps message and send, it is encoded (todo).
 
@@ -71,7 +71,7 @@ Just before the submessage is added to the rtps message and send, it is encoded 
 
 First things first, the submessage is decoded when the rtps message is received (todo).
 
-It is received on a builtin reader, so the builtin queue is used and ```builtins_dqueue_handler()``` is called. That will forward the sample to the token exchange functionality, ignoring every sample that isn't related to the related participant (todo).
+It is received on a builtin reader, so the builtin queue is used and ```ddsi_builtins_dqueue_handler()``` is called. That will forward the sample to the token exchange functionality, ignoring every sample that isn't related to the related participant (todo).
 
 
 ### Gaps on reader side
@@ -92,7 +92,7 @@ It is also used to determine the gap information that is added to samples to a s
 ### Heartbeats
 
 A writer is triggered to send heartbeats once in a while. Normally, that is broadcasted. But, for the volatile secure writer, it has to be send to each reader specifically. The heartbeat submessage that is send to each reader individually is encoded with a reader specific key. This key is generated from the shared secret which was determined during the authentication phase.
- 
+
 When a writer should send heartbeats, ```handle_xevk_heartbeat()``` is called. For the volatile secure writer, the control is immediately submitted to ```send_heartbeat_to_all_readers()```. This will add heartbeat submessages to an rtps message for every reader it deems necessary.
 
 
@@ -111,17 +111,17 @@ Notes</br>
 
 The following elements are added to the data structures:
 
-* struct wr_prd_match::lst_seq     : Highest seq send to this reader used when filter is applied
-* struct pwr_rd_match::last_seq    : Reader specific last received sequence number from the writer.
-* struct proxy_writer::uses_filter : Indicates that a content-filter is active
-* struct proxy_reader::filter      : The filter to apply for this specific reader
+* struct ddsi_wr_prd_match::lst_seq     : Highest seq send to this reader used when filter is applied
+* struct ddsi_pwr_rd_match::last_seq    : Reader specific last received sequence number from the writer.
+* struct ddsi_proxy_writer::uses_filter : Indicates that a content-filter is active
+* struct ddsi_proxy_reader::filter      : The filter to apply for this specific reader
 
 Functions added:
 
-* writer_hbcontrol_p2p : This function creates a heartbeat destined for a specific reader. The volatile secure writer will use an submessage encoding which uses a distinct key for each reader. Therefor a reader specific heartbeat is needed. 
-* nn_defrag_prune : When a volatile secure reader is deleted then the defragmentation administration could still contain messages destined for this reader. This function removes these messages from the defragmentation administration. 
-* volatile_secure_data_filter : The filter applied to the secure volatile messages which filters on the destination participant guid.
-* write_sample_p2p_wrlock_held : This function writes a message to a particular reader.
+* writer_hbcontrol_p2p : This function creates a heartbeat destined for a specific reader. The volatile secure writer will use an submessage encoding which uses a distinct key for each reader. Therefor a reader specific heartbeat is needed.
+* ddsi_defrag_prune : When a volatile secure reader is deleted then the defragmentation administration could still contain messages destined for this reader. This function removes these messages from the defragmentation administration.
+* ddsi_volatile_secure_data_filter : The filter applied to the secure volatile messages which filters on the destination participant guid.
+* ddsi_write_sample_p2p_wrlock_held : This function writes a message to a particular reader.
 
 The use of the content-filter for the volatile secure writer implies that for each destination reader which message from the writer history cache is valid and had to be sent.
 For messages that do not match this filter a GAP message should be sent to the reader. Each time a message is sent to a specific reader a possible gap message is added.

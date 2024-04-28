@@ -1,5 +1,5 @@
 #
-# Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
+# Copyright(c) 2006 to 2021 ZettaScale Technology and others
 #
 # This program and the accompanying materials are made available under the
 # terms of the Eclipse Public License v. 2.0 which is available at
@@ -9,7 +9,6 @@
 #
 # SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
 #
-find_package(CUnit REQUIRED)
 
 set(CUNIT_DIR "${CMAKE_CURRENT_LIST_DIR}/CUnit")
 
@@ -200,15 +199,29 @@ function(process_cunit_source_file SOURCE_FILE HEADER_FILE SUITES TESTS)
   set(${TESTS} ${tests};${theories} PARENT_SCOPE)
 endfunction()
 
-function(add_cunit_executable TARGET)
-  # Retrieve location of shared libary, which is need to extend the PATH
-  # environment variable on Microsoft Windows, so that the operating
-  # system can locate the .dll that it was linked against.
-  # On macOS, this mechanism is used to set the DYLD_LIBRARY_PATH.
-  get_target_property(CUNIT_LIBRARY_TYPE CUnit TYPE)
-  get_target_property(CUNIT_IMPORTED_LOCATION CUnit IMPORTED_LOCATION)
-  get_filename_component(CUNIT_LIBRARY_DIR "${CUNIT_IMPORTED_LOCATION}" PATH)
+function(set_test_library_paths TEST_NAME)
+  file(TO_NATIVE_PATH "${CUNIT_LIBRARY_DIR}" cudir)
+  if(APPLE)
+    set_property(
+      TEST ${TEST_NAME}
+      PROPERTY ENVIRONMENT
+      "DYLD_LIBRARY_PATH=${cudir}:${CMAKE_LIBRARY_OUTPUT_DIRECTORY}:$ENV{DYLD_LIBRARY_PATH}")
+  elseif(WIN32)
+    string(REPLACE "/" "\\" cudir "${cudir}")
+    string(REPLACE ";" "\\;" paths "$ENV{PATH}")
+    set_property(
+      TEST ${TEST_NAME}
+      PROPERTY ENVIRONMENT
+      "PATH=${cudir}\\;${paths}")
+  else()
+    set_property(
+      TEST ${TEST_NAME}
+      PROPERTY ENVIRONMENT
+      "LD_LIBRARY_PATH=${CMAKE_LIBRARY_OUTPUT_DIRECTORY}:$ENV{LD_LIBRARY_PATH}")
+  endif()
+endfunction()
 
+function(add_cunit_executable TARGET)
   set(decls)
   set(defns)
   set(sources)
@@ -277,22 +290,8 @@ function(add_cunit_executable TARGET)
           COMMAND ${TARGET} -s ${suite} -t ${test})
         set_property(TEST ${ctest} PROPERTY TIMEOUT ${timeout})
         set_property(TEST ${ctest} PROPERTY DISABLED ${disabled})
-        if(APPLE)
-          set_property(
-            TEST ${ctest}
-            PROPERTY ENVIRONMENT
-              "DYLD_LIBRARY_PATH=${CUNIT_LIBRARY_DIR}:${CMAKE_LIBRARY_OUTPUT_DIRECTORY}:$ENV{DYLD_LIBRARY_PATH}")
-        elseif(WIN32 AND ${CUNIT_LIBRARY_TYPE} STREQUAL "SHARED_LIBRARY")
-          set_property(
-            TEST ${ctest}
-            PROPERTY ENVIRONMENT
-              "PATH=${CUNIT_LIBRARY_DIR};$ENV{PATH}")
-        else()
-          set_property(
-            TEST ${ctest}
-            PROPERTY ENVIRONMENT
-              "LD_LIBRARY_PATH=${CMAKE_LIBRARY_OUTPUT_DIRECTORY}:$ENV{LD_LIBRARY_PATH}")
-        endif()
+        set_test_library_paths(${ctest})
+
       endforeach()
 
       list(APPEND sources "${source}")
@@ -310,8 +309,7 @@ function(add_cunit_executable TARGET)
 
   add_executable(
     ${TARGET} "${CMAKE_CURRENT_BINARY_DIR}/${TARGET}.c" ${sources})
-  target_link_libraries(${TARGET} PRIVATE CUnit)
-  target_include_directories(${TARGET} PRIVATE "${CUNIT_DIR}/include")
+  target_link_libraries(${TARGET} PRIVATE CycloneDDS::ucunit)
   if(MSVC)
     target_compile_definitions(${TARGET} PRIVATE _CRT_SECURE_NO_WARNINGS)
   endif()

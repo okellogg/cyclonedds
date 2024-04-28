@@ -1,14 +1,13 @@
-/*
-* Copyright(c) 2019 ADLINK Technology Limited and others
-*
-* This program and the accompanying materials are made available under the
-* terms of the Eclipse Public License v. 2.0 which is available at
-* http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
-* v. 1.0 which is available at
-* http://www.eclipse.org/org/documents/edl-v10.php.
-*
-* SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
-*/
+// Copyright(c) 2019 to 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -38,7 +37,7 @@ static uint32_t hash_uint32 (const void *v)
   return h;
 }
 
-static int equals_uint32 (const void *a, const void *b)
+static bool equals_uint32 (const void *a, const void *b)
 {
   return *((uint32_t *) a) == *((uint32_t *) b);
 }
@@ -101,20 +100,22 @@ struct ops {
   void * (*new) (void);
   void (*free) (void *h);
   void * (*lookup) (void *h, const void *v);
-  int (*add) (void *h, const void *v);
+  int (*add) (void *h, void *v);
   int (*remove) (void *h, const void *v);
 };
 
 #define WRAP(ret_, f_) static ret_ f_##_w (void *h, const void *v) { return f_ (h, v); }
 WRAP(void *, ddsrt_hh_lookup);
-WRAP(int, ddsrt_hh_add);
 WRAP(int, ddsrt_hh_remove);
 WRAP(void *, ddsrt_chh_lookup);
-WRAP(int, ddsrt_chh_add);
 WRAP(int, ddsrt_chh_remove);
 WRAP(void *, ddsrt_ehh_lookup);
-WRAP(int, ddsrt_ehh_add);
 WRAP(int, ddsrt_ehh_remove);
+#undef WRAP
+#define WRAP(ret_, f_) static ret_ f_##_w (void *h, void *v) { return f_ (h, v); }
+WRAP(int, ddsrt_hh_add);
+WRAP(int, ddsrt_chh_add);
+WRAP(int, ddsrt_ehh_add);
 #undef WRAP
 
 static void free_buckets (void *bs, void *arg)
@@ -221,15 +222,16 @@ CU_Theory ((const struct ops *ops, bool random, adj_fun_t adj, const char *adjna
 }
 
 struct gcelem {
+  void *block;
   struct gcelem *next;
 };
 
 static void chhtest_gc (void *block, void *arg)
 {
-  // block is large enough
   // simply defer freeing memory until the end of the test
   struct gcelem **gclist = arg;
-  struct gcelem *elem = block;
+  struct gcelem *elem = ddsrt_malloc (sizeof (*elem));
+  elem->block = block;
   elem->next = *gclist;
   *gclist = elem;
 }
@@ -295,7 +297,7 @@ static uint32_t chhtest_thread (void *varg)
         {
           const uint32_t ix = (raw_oper >> 2) % arg->nkeys;
           bool x = ddsrt_chh_lookup (arg->chh, ksptrs[ix]);
-          if (arg->check && ((ix < n) ? !x : x)) { CU_ASSERT_FATAL (0) };
+          if (arg->check && ((ix < n) ? !x : x)) { CU_ASSERT_FATAL (0); }
           arg->lookups++;
         }
         break;
@@ -402,6 +404,7 @@ CU_Test(ddsrt_hopscotch, concurrent, .timeout = 20)
   {
     struct gcelem *elem = gclist;
     gclist = gclist->next;
+    ddsrt_free (elem->block);
     ddsrt_free (elem);
   }
 }

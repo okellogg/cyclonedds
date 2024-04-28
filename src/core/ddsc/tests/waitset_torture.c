@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2019 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2019 to 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <assert.h>
 #include <limits.h>
 
@@ -393,6 +392,12 @@ CU_Test (ddsc_waitset, torture)
              create_ent_ok_sum +
              wait_ok_sum > 1000);
 
+  /* Library should be de-initialized at this point.  That ordinarily means the handle
+     table is gone and PRECONDITION_NOT_MET is returned.  For some reason, on Windows x64
+     Release builds the thread cleanup doesn't fully take place, ultimately causing the
+     handle table to remain in existence (this is by design: those threads may still be
+     reading from it) and BAD_PARAMETER to be returned if the library is otherwise
+     properly deinitialized. */
   rc = dds_get_parent (DDS_CYCLONEDDS_HANDLE);
-  CU_ASSERT_FATAL (rc == DDS_RETCODE_PRECONDITION_NOT_MET);
+  CU_ASSERT_FATAL (rc == DDS_RETCODE_PRECONDITION_NOT_MET || rc == DDS_RETCODE_BAD_PARAMETER);
 }

@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2021 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <assert.h>
 #include <errno.h>
 #include <string.h>
@@ -25,6 +24,7 @@
 #endif
 
 #include "file.h"
+#include "idl/heap.h"
 #include "idl/string.h"
 
 unsigned int idl_isseparator(int chr)
@@ -147,14 +147,14 @@ static char *absolute_path(const char *path)
     if (dirlen + 2 >= (SIZE_MAX - pathlen))
       goto err_abs;
     len = dirlen + 1 /* separator */ + pathlen;
-    if (!(abspath = malloc(len + 1)))
+    if (!(abspath = idl_malloc(len + 1)))
       goto err_abs;
     memcpy(abspath, dir, dirlen);
     abspath[dirlen] = sep;
     memcpy(abspath + dirlen + 1, path, pathlen);
     abspath[len] = '\0';
 err_abs:
-    free(dir);
+    idl_free(dir);
 err_cwd:
     return abspath;
   }
@@ -166,17 +166,17 @@ static ssize_t normalize_segment(const char *path, char *segment)
 {
   WIN32_FIND_DATA find_data;
   HANDLE find;
-  ssize_t seglen = strlen(segment);
+  size_t seglen = strlen(segment);
 
   find = FindFirstFile(path, &find_data);
   if (find == INVALID_HANDLE_VALUE)
-
-  if (strlen(find_data.cFileName) == (size_t)seglen)
+    return -1;
+  if (strlen(find_data.cFileName) == seglen)
     memcpy(segment, find_data.cFileName, seglen);
   else
-    seglen = -1;
+    seglen = (size_t)-1;
   FindClose(find);
-  return seglen;
+  return (ssize_t)seglen;
 }
 #else
 static ssize_t normalize_segment(const char *path, char *segment)
@@ -199,7 +199,7 @@ idl_retcode_t idl_normalize_path(const char *path, char **normpathp)
     { ret = IDL_RETCODE_NO_MEMORY; goto err_abs; }
   if ((len = idl_untaint_path(abspath)) < 0)
     { ret = IDL_RETCODE_BAD_PARAMETER; goto err_norm; }
-  if (!(normpath = malloc((size_t)len + 1)))
+  if (!(normpath = idl_malloc((size_t)len + 1)))
     { ret = IDL_RETCODE_NO_MEMORY; goto err_norm; }
 
   /* ensure Windows drive letters are capitals */
@@ -237,13 +237,13 @@ idl_retcode_t idl_normalize_path(const char *path, char **normpathp)
     assert(pos == (size_t)len);
   }
 
-  free(abspath);
+  idl_free(abspath);
   *normpathp = normpath;
-  return (idl_retcode_t)len;
+  return IDL_RETCODE_OK;
 err_seg:
-  free(normpath);
+  idl_free(normpath);
 err_norm:
-  free(abspath);
+  idl_free(abspath);
 err_abs:
   return ret;
 }
@@ -346,7 +346,7 @@ idl_retcode_t idl_relative_path(const char *base, const char *path, char **relpa
     for (size_t i=0; rew[i]; i++)
       cnt += (isseparator(rew[i]) && !isdelimiter(rew[i+1]));
     len = cnt*3;
-    if (!(rev = malloc(len+1)))
+    if (!(rev = idl_malloc(len+1)))
       return IDL_RETCODE_NO_MEMORY;
     memset(rev, '.', len);
     rev[len] = '\0';
@@ -354,12 +354,219 @@ idl_retcode_t idl_relative_path(const char *base, const char *path, char **relpa
       rev[(i*3)+2] = sep;
   }
 
-  idl_asprintf(&rel, "%s%s", rev ? rev : "", fwd);
+  (void) idl_asprintf(&rel, "%s%s", rev ? rev : "", fwd);
   if (rev)
-    free(rev);
+    idl_free(rev);
   if (!rel)
     return IDL_RETCODE_NO_MEMORY;
   idl_untaint_path(rel);
   *relpathp = rel;
   return IDL_RETCODE_OK;
+}
+
+#if _WIN32
+static inline idl_retcode_t idl_mkdir(const char *pathname, int mode) {
+  (void) mode;
+  return _mkdir(pathname);
+}
+#else
+static inline idl_retcode_t idl_mkdir(const char *pathname, mode_t mode) {
+  return mkdir(pathname, mode);
+}
+#endif
+
+idl_retcode_t idl_mkpath(const char *path)
+{
+  idl_retcode_t ret = IDL_RETCODE_NO_MEMORY;
+  char *full_path;
+
+  assert(path);
+  if (!(full_path = absolute_path(path)))
+    goto err_full_path;
+
+  if(idl_untaint_path(full_path) < 0)
+    goto err_untaint;
+
+  {
+    char chr, *ptr = full_path;
+
+    for (; *ptr && *ptr != '/' && *ptr != sep; ptr++)
+      /* skip ahead to first separator to skip drive */;
+
+    while (*ptr)
+    {
+      for (++ptr; *ptr && *ptr != '/' && *ptr != sep; ptr++)
+        /* search for next segment */;
+      assert(ptr[-1] != '/' && ptr[-1] != sep);
+      chr = *ptr;
+      *ptr = '\0';
+      if ((ret = idl_mkdir(full_path, 0777)) == -1 && errno != EEXIST)
+        goto err_mkdir;
+      *ptr = chr;
+    }
+
+    ret = IDL_RETCODE_OK;
+  }
+
+  err_mkdir:
+  err_untaint:
+  idl_free(full_path);
+  err_full_path:
+  return ret;
+}
+
+/**
+ * \verbatim
+ *  Given inputs path, output_dir, base_dir, out_ext, constructs the correct output path for the file.
+ *  Unless specified otherwise, will also create intermediate directories to allow for immediate access
+ *  to the file on return.
+ *
+ *  If the input file is absolute, the output path will always be in the form of
+ *  cwd/file.ext OR output_dir/file.ext
+ *  File is derived from the end of `path`, any directories `a, b, c, etc.` are derived from rel. path difference
+ *  between `path` and `base_dir`.
+ *
+ *  If the input path is relative, output path will be in the form of
+ *  a/b/c/file.ext OR output_dir/a/b/c/file.ext, given an input path like a/b/c/file.idl
+ *
+ *  If base_dir is provided, output_path will take the form of
+ *  b/c/file.ext OR output_dir/b/c/file.ext given
+ *  input path /a/b/c/file.idl and a base path /a
+ *  Memory will be allocated to ensure `path` is absolute, to use idl_relative_path and determine the common path.
+ *  This will return an error if the path to the base_dir requires us to go up the tree,
+ *  which could lead to unwanted behavior.
+ *  (e.g. path=/a/b/c/d/file.idl, base_path=/a/b/c/f => ../d/file.idl)
+ * \endverbatim
+ *
+ * @param path          Path (abs / rel) to the input file. Non NULL
+ * @param output_dir    Path (abs / rel) to the desired output directory. Can be NULL
+ * @param base_dir      Absolute path to the "base directory" of a tree. Can be NULL
+ * @param out_ext       Desired output extension. Can be NULL
+ * @param out_ptr       Pointer to output str. Non NULL
+ * @param skip_mkpath   Allows the function to skip making the output path. Used for testing, recommended False
+ * @return retcode
+ */
+idl_retcode_t idl_generate_out_file(const char *path, const char *output_dir, const char *base_dir, const char *out_ext, char ** out_ptr, int skip_mkpath) {
+  assert(out_ptr);
+
+  idl_retcode_t ret = IDL_RETCODE_NO_MEMORY;
+  const char *sepr, *ext, *file;
+  char empty[1] = { '\0' };
+  char *dir = NULL, *basename = NULL, *abs_file_path = NULL;
+  char* rel_path = NULL;
+  char *output_path = NULL;
+
+  if(base_dir && !idl_isabsolute(base_dir)) {
+    ret = IDL_RETCODE_BAD_PARAMETER;
+    goto err_dir;
+  }
+
+  sepr = ext = NULL;
+  for (const char *ptr = path; ptr[0]; ptr++) {
+    if (idl_isseparator((unsigned char)ptr[0]) && ptr[1] != '\0')
+      sepr = ptr;
+    else if (ptr[0] == '.')
+      ext = ptr;
+  }
+
+  file = sepr ? sepr + 1 : path;
+  if (idl_isabsolute(path) || !sepr)
+    dir = empty;
+  else if (!(dir = idl_strndup(path, (size_t)(sepr-path))))
+    goto err_dir;
+  if (!(basename = idl_strndup(file, ext ? (size_t)(ext-file) : strlen(file))))
+    goto err_basename;
+
+  /* replace backslashes by forward slashes; assert for gcc 13 static analyzer */
+  assert (dir != empty || *dir == '\0');
+  for (char *ptr = dir; *ptr; ptr++) {
+    if (*ptr == '\\')
+      *ptr = '/';
+  }
+
+  if(base_dir) {
+    char* old_dir = dir;
+
+    // We need an absolute path to use idl_relative_path so grab the absolute path of our input file
+    // if we were provided relative paths
+    if(!idl_isabsolute(path)) {
+      if((idl_normalize_path(path, &abs_file_path)) < 0) {
+        goto err_rel_path;
+      }
+    } else {
+      if(!(abs_file_path = idl_strdup(path))) {
+        goto err_rel_path;
+      }
+    }
+
+    // If we run into a path error we can still recover and use existing dir
+    if(idl_relative_path(base_dir, abs_file_path, &rel_path) == IDL_RETCODE_NO_MEMORY)
+      goto err_rel_path;
+    // If root is not a parent of file path, or there was an error resolving rel path then return an error
+#if _WIN32
+    int is_reverse_path = (rel_path && (strncmp(rel_path, "..\\", 3) == 0));
+#else
+    int is_reverse_path = (rel_path && (strncmp(rel_path, "../", 3) == 0));
+#endif
+    if(is_reverse_path){
+      ret = IDL_RETCODE_BAD_PARAMETER;
+      goto err_rel_path;
+    }
+
+    // Extract the common directory to dir, idl_free the old_dir pointer
+    dir = NULL;
+    size_t print_len = rel_path == NULL ? 0 : strlen(rel_path);
+    if (file) {
+      size_t file_len = sepr == NULL ? 0 : strlen(sepr);
+      print_len = print_len >= file_len ? print_len - file_len : 0;
+    }
+    if (!(dir = idl_strndup(rel_path, print_len))) {
+      goto err_rel_path;
+    }
+    if (old_dir != empty)
+      idl_free(old_dir);
+  }
+
+  sepr = dir[0] == '\0' ? "" : "/";
+  if(output_dir && output_dir[0] != '\0') {
+    if(idl_asprintf(&output_path, "%s%s%s", output_dir, sepr, dir) < 0)
+      goto err_rel_path;
+    sepr = "/";
+  } else {
+    if(!(output_path = idl_strdup(dir)))
+      goto err_rel_path;
+  }
+
+  // Allow skipping of path generation for unit testing
+  if(!skip_mkpath) {
+    if(idl_mkpath(output_path) < 0)
+      goto err_mkpath;
+  }
+
+  if (idl_asprintf(out_ptr, "%s%s%s%s%s",
+                   output_path,
+                   sepr,
+                   basename,
+                   out_ext ? "." : "",
+                   out_ext ? out_ext : ""
+                   ) < 0) {
+    goto err_outpath;
+  }
+  ret = IDL_RETCODE_OK;
+
+err_outpath:
+err_mkpath:
+  if(output_path)
+    idl_free(output_path);
+err_rel_path:
+  if(rel_path)
+    idl_free(rel_path);
+  if(abs_file_path)
+    idl_free(abs_file_path);
+  idl_free(basename);
+err_basename:
+  if (dir && dir != empty)
+    idl_free(dir);
+err_dir:
+  return ret;
 }

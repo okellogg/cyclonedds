@@ -1,18 +1,18 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <assert.h>
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
+#include <setjmp.h>
 
 #ifdef __APPLE__
 #include <pthread.h>
@@ -54,9 +54,9 @@
  * https://blogs.msdn.microsoft.com/larryosterman/2004/04/19/its-only-temporary/
  */
 
-FILE *fmemopen(void *buf, size_t size, const char *mode)
+static FILE *fmemopen(void *buf, size_t size, const char *mode)
 {
-  int err = 0;
+  DWORD err = 0;
   int fd = -1;
   DWORD ret;
   FILE *fh = NULL;
@@ -65,7 +65,6 @@ FILE *fmemopen(void *buf, size_t size, const char *mode)
      characters */
   char tmpdir[(MAX_PATH + 1) - 14];
   char tmpfile[MAX_PATH + 1];
-  static const int max = 1000;
   static const char pfx[] = "cyclone"; /* Up to first three are used. */
 
   (void)buf;
@@ -99,7 +98,7 @@ FILE *fmemopen(void *buf, size_t size, const char *mode)
   }
 
   if (err) {
-    errno = err;
+    errno = (int)err;
   } else {
     DDSRT_WARNING_MSVC_OFF(4996);
     if ((fd = _open_osfhandle((intptr_t)hdl, _O_APPEND)) == -1) {
@@ -507,5 +506,6 @@ CU_Theory((bool local, int mode, bool expect_in_trace), dds_log, fatal_aborts)
   (void) local;
   (void) mode;
   (void) expect_in_trace;
+  CU_PASS ("test skipped on this platform");
 #endif
 }

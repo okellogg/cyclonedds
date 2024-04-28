@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2020 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2020 to 2022 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <stddef.h>
 #include <ctype.h>
 #include <assert.h>
@@ -19,36 +18,28 @@
 #include "dds/ddsrt/heap.h"
 #include "dds/ddsi/ddsi_plist.h"
 #include "dds/ddsi/ddsi_sertype.h"
-#include "dds/ddsi/ddsi_serdata_plist.h"
-#include "dds/ddsi/ddsi_typelookup.h"
+#include "ddsi__serdata_plist.h"
 
 static bool sertype_plist_equal (const struct ddsi_sertype *acmn, const struct ddsi_sertype *bcmn)
 {
   const struct ddsi_sertype_plist *a = (struct ddsi_sertype_plist *) acmn;
   const struct ddsi_sertype_plist *b = (struct ddsi_sertype_plist *) bcmn;
-  if (a->native_encoding_identifier != b->native_encoding_identifier)
+  if (a->encoding_format != b->encoding_format)
     return false;
   if (a->keyparam != b->keyparam)
     return false;
   return true;
 }
 
-static bool sertype_plist_typeid_hash (const struct ddsi_sertype *tpcmn, unsigned char *buf)
-{
-  const struct ddsi_sertype_plist *tp = (struct ddsi_sertype_plist *) tpcmn;
-
-  ddsrt_md5_state_t md5st;
-  ddsrt_md5_init (&md5st);
-  ddsrt_md5_append (&md5st, (ddsrt_md5_byte_t *) &tp->native_encoding_identifier, sizeof (tp->native_encoding_identifier));
-  ddsrt_md5_append (&md5st, (ddsrt_md5_byte_t *) &tp->keyparam, sizeof (tp->keyparam));
-  ddsrt_md5_finish (&md5st, (ddsrt_md5_byte_t *) buf);
-  return true;
-}
-
 static uint32_t sertype_plist_hash (const struct ddsi_sertype *tpcmn)
 {
   unsigned char buf[16];
-  sertype_plist_typeid_hash (tpcmn, buf);
+  const struct ddsi_sertype_plist *tp = (struct ddsi_sertype_plist *) tpcmn;
+  ddsrt_md5_state_t md5st;
+  ddsrt_md5_init (&md5st);
+  ddsrt_md5_append (&md5st, (ddsrt_md5_byte_t *) &tp->encoding_format, sizeof (tp->encoding_format));
+  ddsrt_md5_append (&md5st, (ddsrt_md5_byte_t *) &tp->keyparam, sizeof (tp->keyparam));
+  ddsrt_md5_finish (&md5st, (ddsrt_md5_byte_t *) buf);
   return *(uint32_t *) buf;
 }
 
@@ -73,7 +64,7 @@ static void sertype_plist_realloc_samples (void **ptrs, const struct ddsi_sertyp
   ddsi_plist_t *new = (oldcount == count) ? old : dds_realloc (old, count * sizeof (ddsi_plist_t));
   if (new)
   {
-    for (size_t i = count; i < oldcount; i++)
+    for (size_t i = oldcount; i < count; i++)
       ddsi_plist_init_empty (&new[i]);
     for (size_t i = 0; i < count; i++)
       ptrs[i] = &new[i];
@@ -102,13 +93,13 @@ const struct ddsi_sertype_ops ddsi_sertype_ops_plist = {
   .arg = 0,
   .equal = sertype_plist_equal,
   .hash = sertype_plist_hash,
-  .typeid_hash = sertype_plist_typeid_hash,
   .free = sertype_plist_free,
   .zero_samples = sertype_plist_zero_samples,
   .realloc_samples = sertype_plist_realloc_samples,
   .free_samples = sertype_plist_free_samples,
-  .serialized_size = 0,
-  .serialize = 0,
-  .deserialize = 0,
-  .assignable_from = 0
+  .type_id = 0,
+  .type_map = 0,
+  .type_info = 0,
+  .get_serialized_size = 0,
+  .serialize_into = 0
 };

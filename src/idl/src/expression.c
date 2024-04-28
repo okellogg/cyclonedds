@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2021 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2021 to 2022 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <assert.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -182,7 +181,7 @@ int_add(idl_intval_t *a, idl_intval_t *b, idl_intval_t *r)
       break;
     case 3:
       if (s(b) < (intmin(gt) + -s(a)))
-        return -1;
+        return IDL_RETCODE_OUT_OF_RANGE;
       s(r) = s(a) + s(b);
       t(r) = gt & ~1u;
       break;
@@ -321,6 +320,13 @@ int_modulo(idl_intval_t *a, idl_intval_t *b, idl_intval_t *r)
   return IDL_RETCODE_OK;
 }
 
+#ifndef NDEBUG
+static bool is_arith_return_type (idl_type_t t)
+{
+  return (t == IDL_LONG || t == IDL_ULONG || t == IDL_LLONG || t == IDL_ULLONG);
+}
+#endif
+
 static idl_retcode_t
 eval_binary_int_expr(
   idl_pstate_t *pstate,
@@ -331,8 +337,7 @@ eval_binary_int_expr(
   idl_retcode_t ret;
   idl_intval_t val, lhs, rhs;
 
-  assert((type & IDL_LONG) == IDL_LONG ||
-         (type & IDL_LLONG) == IDL_ULLONG);
+  assert (is_arith_return_type (type));
 
   if ((ret = eval_int_expr(pstate, expr->left, type, &lhs)))
     return ret;
@@ -398,8 +403,7 @@ eval_unary_int_expr(
   idl_retcode_t ret;
   idl_intval_t val, rhs;
 
-  assert((type & IDL_LONG) == IDL_LONG ||
-         (type & IDL_LLONG) == IDL_LLONG);
+  assert (is_arith_return_type (type));
 
   if ((ret = eval_int_expr(pstate, expr->right, type, &rhs)))
     return ret;
@@ -424,6 +428,15 @@ eval_unary_int_expr(
 
   *valp = val;
   return IDL_RETCODE_OK;
+}
+
+static idl_intval_t bitval(const idl_const_expr_t *const_expr)
+{
+  assert(idl_is_bit_value(const_expr));
+
+  const idl_bit_value_t *val = (idl_bit_value_t *)const_expr;
+
+  return (idl_intval_t){.type = IDL_ULLONG, .value = {.ullng = (uint64_t) (0x1ull << val->position.value)} };
 }
 
 #undef u
@@ -452,11 +465,38 @@ eval_int_expr(
   {
     *valp = intval(const_expr);
     return IDL_RETCODE_OK;
+  } else if (mask & IDL_BIT_VALUE) {
+    *valp = bitval(const_expr);
+    return IDL_RETCODE_OK;
   }
 
   idl_error(pstate, idl_location(const_expr),
     "Cannot evaluate %s as integer expression", idl_construct(const_expr));
   return IDL_RETCODE_ILLEGAL_EXPRESSION;
+}
+
+static idl_retcode_t
+eval_bitmask(
+  idl_pstate_t *pstate,
+  idl_const_expr_t *expr,
+  idl_type_t type,
+  void *nodep)
+{
+  idl_retcode_t ret;
+  idl_intval_t val;
+  idl_literal_t literal;
+  idl_type_t as = IDL_ULLONG;
+
+  memset(&literal, 0, sizeof(literal));
+
+  if ((ret = eval_int_expr(pstate, expr, as, &val)) ||
+      (ret = idl_create_literal(pstate, idl_location(expr), type, nodep)))
+    return ret;
+
+  literal.value.uint64 = val.value.ullng;
+
+  (*((idl_literal_t **)nodep))->value = literal.value;
+  return IDL_RETCODE_OK;
 }
 
 static idl_retcode_t
@@ -519,6 +559,10 @@ eval_float_expr(
   idl_type_t type,
   idl_floatval_t *valp);
 
+#if defined __MINGW32__
+_Pragma("GCC diagnostic push")
+_Pragma("GCC diagnostic ignored \"-Wfloat-conversion\"")
+#endif
 static bool
 float_overflows(long double ldbl, idl_type_t type)
 {
@@ -530,6 +574,9 @@ float_overflows(long double ldbl, idl_type_t type)
     return isnan(ldbl) || isinf(ldbl);
   abort();
 }
+#if defined __MINGW32__
+_Pragma("GCC diagnostic pop")
+#endif
 
 static idl_retcode_t
 eval_binary_float_expr(
@@ -703,6 +750,10 @@ idl_evaluate(
     }
     *((idl_enumerator_t **)nodep) = const_expr;
     return IDL_RETCODE_OK;
+  } else if (implicit == IDL_BITMASK) {
+    if ((ret = eval_bitmask(pstate, const_expr, type, nodep)))
+      return ret;
+    goto done;
   } else if (implicit == IDL_OCTET || (implicit & IDL_INTEGER_TYPE)) {
     if ((ret = eval_int(pstate, const_expr, type, nodep)))
       return ret;
@@ -747,7 +798,7 @@ idl_evaluate(
     }
   }
 
-  if ((ret = idl_create_literal(pstate, idl_location(const_expr), type, nodep)))
+  if ((ret = idl_create_literal(pstate, idl_location(const_expr), implicit, nodep)))
     return ret;
   (*((idl_literal_t **)nodep))->value = temporary.value;
 done:
@@ -846,6 +897,7 @@ idl_intval_t idl_intval(const idl_const_expr_t *const_expr)
   assert(idl_is_literal(const_expr));
 
   switch (type) {
+    case IDL_BITMASK: return bitval(const_expr);
     case IDL_INT8:   return SIGNED(IDL_LONG, val->value.int8);
     case IDL_UINT8:
     case IDL_OCTET:  return UNSIGNED(IDL_ULONG, val->value.uint8);
@@ -896,6 +948,11 @@ compare_int(const idl_const_expr_t *lhs, const idl_const_expr_t *rhs)
   }
 }
 
+idl_floatval_t
+idl_floatval(const idl_const_expr_t *const_expr) {
+  return floatval(const_expr);
+}
+
 static idl_floatval_t floatval(const idl_const_expr_t *const_expr)
 {
   idl_type_t type = idl_type(const_expr);
@@ -904,6 +961,29 @@ static idl_floatval_t floatval(const idl_const_expr_t *const_expr)
   assert(idl_is_literal(const_expr));
 
   switch (type) {
+    case IDL_INT8:
+      return (idl_floatval_t)val->value.int8;
+    case IDL_OCTET:
+    case IDL_UINT8:
+      return (idl_floatval_t)val->value.uint8;
+    case IDL_SHORT:
+    case IDL_INT16:
+      return (idl_floatval_t)val->value.int16;
+    case IDL_USHORT:
+    case IDL_UINT16:
+      return (idl_floatval_t)val->value.uint16;
+    case IDL_LONG:
+    case IDL_INT32:
+      return (idl_floatval_t)val->value.int32;
+    case IDL_ULONG:
+    case IDL_UINT32:
+      return (idl_floatval_t)val->value.uint32;
+    case IDL_LLONG:
+    case IDL_INT64:
+      return (idl_floatval_t)val->value.int64;
+    case IDL_ULLONG:
+    case IDL_UINT64:
+      return (idl_floatval_t)val->value.uint64;
     case IDL_FLOAT:
       return (idl_floatval_t)val->value.flt;
     case IDL_DOUBLE:
@@ -958,9 +1038,9 @@ compare_enum(const idl_const_expr_t *lhs, const idl_const_expr_t *rhs)
   assert(idl_is_enumerator(rval));
   if (lval->node.parent != rval->node.parent)
     return IDL_MISMATCH; /* incompatible enums */
-  if (lval->value < rval->value)
+  if (lval->value.value < rval->value.value)
     return IDL_LESS;
-  if (lval->value > rval->value)
+  if (lval->value.value > rval->value.value)
     return IDL_GREATER;
   return IDL_EQUAL;
 }

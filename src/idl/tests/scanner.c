@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2020 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2020 to 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <assert.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -223,6 +222,12 @@ CU_Test(idl_scanner, floating_pt_literal)
 
 CU_Test(idl_scanner, floating_pt_literal_dot_fraction)
 { test(".1", TOKVEC( TFL(.1,1,1,1,3), T0(1,3) )); }
+
+CU_Test(idl_scanner, floating_pt_literal_int_dot_fraction_exp)
+{ test("1.1e+3", TOKVEC( TFL(1.1e3,1,1,1,7), T0(1,7) )); }
+
+CU_Test(idl_scanner, floating_pt_literal_int_dot_fraction)
+{ test("1.1e-3e3", TOKVEC( TFL(1.1e-3,1,1,1,7), TI_STR("e3", 1,7,1,9), T0(1,9) )); }
 
 /* identifier */
 CU_Test(idl_scanner, ident)

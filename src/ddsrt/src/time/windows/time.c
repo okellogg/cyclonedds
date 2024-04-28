@@ -1,19 +1,19 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <assert.h>
 #include <sys/timeb.h>
 #include <time.h>
 
 #include "dds/ddsrt/time.h"
+#include "dds/ddsrt/misc.h"
 
 extern inline DWORD
 ddsrt_duration_to_msecs_ceil(dds_duration_t reltime);
@@ -24,7 +24,8 @@ ddsrt_duration_to_msecs_ceil(dds_duration_t reltime);
 #if defined(_WIN32_WINNT) && _WIN32_WINNT >= 0x0602
 #define UseGetSystemTimePreciseAsFileTime
 #else
-static VOID (WINAPI *GetSystemTimeAsFileTimeFunc)(LPFILTETIME) = GetSystemTimeAsFileTime;
+typedef void (WINAPI *GetSystemTimeAsFileTimeFunc_t)(LPFILETIME);
+static GetSystemTimeAsFileTimeFunc_t GetSystemTimeAsFileTimeFunc = GetSystemTimeAsFileTime;
 static HANDLE Kernel32ModuleHandle;
 #endif
 
@@ -67,11 +68,13 @@ dds_time_t dds_time(void)
   return (dds_time_t)(ns100.QuadPart * 100);
 }
 
+DDSRT_WARNING_GNUC_OFF(missing-prototypes)
+DDSRT_WARNING_CLANG_OFF(missing-prototypes)
 void ddsrt_time_init(void)
 {
 #ifndef UseGetSystemTimePreciseAsFileTime
   /* Resolve the time-functions from the Kernel32-library. */
-  VOID (WINAPI *f) (LPFILTETIME);
+  GetSystemTimeAsFileTimeFunc_t f;
 
   /* This os_timeModuleInit is currently called from DllMain. This means
    * we're not allowed to do LoadLibrary. One exception is "Kernel32.DLL",
@@ -82,7 +85,9 @@ void ddsrt_time_init(void)
   Kernel32ModuleHandle = LoadLibrary("Kernel32.DLL");
   assert(Kernel32ModuleHandle);
 
-  f = GetProcAddress(Kernel32ModuleHandle, "GetSystemTimePreciseAsFileTime");
+  DDSRT_WARNING_GNUC_OFF(cast-function-type)
+  f = (GetSystemTimeAsFileTimeFunc_t)GetProcAddress(Kernel32ModuleHandle, "GetSystemTimePreciseAsFileTime");
+  DDSRT_WARNING_GNUC_ON(cast-function-type)
   if (f != 0) {
     GetSystemTimeAsFileTimeFunc = f;
   }
@@ -99,6 +104,8 @@ void ddsrt_time_fini(void)
   }
 #endif
 }
+DDSRT_WARNING_GNUC_ON(missing-prototypes)
+DDSRT_WARNING_CLANG_ON(missing-prototypes)
 
 ddsrt_wctime_t ddsrt_time_wallclock(void)
 {
@@ -111,7 +118,7 @@ ddsrt_mtime_t ddsrt_time_monotonic(void)
 
   (void)QueryUnbiasedInterruptTime(&ubit); /* 100ns ticks */
 
-  return (ddsrt_mtime_t) { ubit * 100 };
+  return (ddsrt_mtime_t) { (dds_time_t)ubit * 100 };
 }
 
 ddsrt_etime_t ddsrt_time_elapsed(void)

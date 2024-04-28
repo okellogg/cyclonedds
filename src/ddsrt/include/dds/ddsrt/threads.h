@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2022 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 /**
  * @file threads.h
  * @brief Thread management and creation.
@@ -21,6 +20,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "dds/config.h"
 #include "dds/export.h"
 #include "dds/ddsrt/attributes.h"
 #include "dds/ddsrt/retcode.h"
@@ -38,7 +38,7 @@
 extern "C" {
 #endif
 
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) || __MINGW__
   /* Thread-local storage using __declspec(thread) on Windows versions before
      Vista and Server 2008 works in DLLs if they are bound to the executable,
      it does not work if the library is loaded using LoadLibrary. */
@@ -58,7 +58,7 @@ extern "C" {
 /**
  * @brief Definition for a thread routine invoked on thread create.
  */
-typedef uint32_t (*ddsrt_thread_routine_t)(void*);
+typedef uint32_t (*ddsrt_thread_routine_t)(void* p);
 
 /**
  * @brief Definition of the thread attributes
@@ -257,7 +257,7 @@ DDS_EXPORT dds_return_t ddsrt_thread_getname_anythread (ddsrt_thread_list_id_t t
  */
 DDS_EXPORT dds_return_t
 ddsrt_thread_cleanup_push(
-  void (*routine)(void*),
+  void (*routine)(void* p),
   void *arg);
 
 /**
@@ -277,7 +277,7 @@ ddsrt_thread_cleanup_pop(
  * default initialization is done automatically.
  */
 DDS_EXPORT void
-ddsrt_thread_init(void);
+ddsrt_thread_init(uint32_t reason);
 
 /**
  * @brief Free thread resources and execute cleanup handlers.
@@ -288,7 +288,7 @@ ddsrt_thread_init(void);
  * only for threads that were not created with @ddsrt_thread_create.
  */
 DDS_EXPORT void
-ddsrt_thread_fini(void);
+ddsrt_thread_fini(uint32_t reason);
 
 #if defined (__cplusplus)
 }

@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2019 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include "dds/ddsrt/heap.h"
 #include "dds/ddsrt/string.h"
 #include "dds/ddsrt/types.h"
@@ -16,20 +15,18 @@
 #include "dds/security/dds_security_api.h"
 #include "dds/security/core/dds_security_serialize.h"
 #include "dds/security/core/dds_security_utils.h"
-#include "dds/security/core/shared_secret.h"
+#include "dds/security/core/dds_security_shared_secret.h"
 #include "dds/security/openssl_support.h"
 #include "CUnit/CUnit.h"
 #include "CUnit/Test.h"
 #include "common/src/loader.h"
 #include "crypto_objects.h"
+#include "crypto_tokens.h"
 
 #define TEST_SHARED_SECRET_SIZE 32
 
 #define CRYPTO_TRANSFORM_KIND(k) (*(uint32_t *)&((k)[0]))
 #define CRYPTO_TRANSFORM_ID(k) (*(uint32_t *)&((k)[0]))
-
-static const char *CRYPTO_TOKEN_CLASS_ID = "DDS:Crypto:AES_GCM_GMAC";
-static const char *CRYPTO_TOKEN_PROPERTY_NAME = "dds.cryp.keymat";
 
 static struct plugins_hdl *plugins = NULL;
 static dds_security_cryptography *crypto = NULL;
@@ -327,11 +324,11 @@ static bool check_token_validity(const DDS_Security_DatawriterCryptoTokenSeq *to
   for (i = 0; status && (i < tokens->_length); i++)
   {
     status = (tokens->_buffer[i].class_id != NULL) &&
-             (strcmp(CRYPTO_TOKEN_CLASS_ID, tokens->_buffer[i].class_id) == 0) &&
+             (strcmp(DDS_CRYPTOTOKEN_CLASS_ID, tokens->_buffer[i].class_id) == 0) &&
              (tokens->_buffer[i].binary_properties._length == 1) &&
              (tokens->_buffer[i].binary_properties._buffer != NULL) &&
              (tokens->_buffer[i].binary_properties._buffer[0].name != NULL) &&
-             (strcmp(CRYPTO_TOKEN_PROPERTY_NAME, tokens->_buffer[i].binary_properties._buffer[0].name) == 0) &&
+             (strcmp(DDS_CRYPTOTOKEN_PROP_KEYMAT, tokens->_buffer[i].binary_properties._buffer[0].name) == 0) &&
              (tokens->_buffer[i].binary_properties._buffer[0].value._length > 0) &&
              (tokens->_buffer[i].binary_properties._buffer[0].value._buffer != NULL);
 

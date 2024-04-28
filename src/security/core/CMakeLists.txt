@@ -1,5 +1,5 @@
 #
-# Copyright(c) 2006 to 2021 ADLINK Technology Limited and others
+# Copyright(c) 2006 to 2021 ZettaScale Technology and others
 #
 # This program and the accompanying materials are made available under the
 # terms of the Eclipse Public License v. 2.0 which is available at
@@ -13,9 +13,20 @@ set(sources
   dds_security_serialize.c
   dds_security_utils.c
   dds_security_plugins.c
-  shared_secret.c
+  dds_security_shared_secret.c
   dds_security_fsm.c
   dds_security_timed_cb.c)
+prepend(sources "${CMAKE_CURRENT_LIST_DIR}/src" ${sources})
+
+set(headers
+  dds_security_fsm.h
+  dds_security_plugins.h
+  dds_security_serialize.h
+  dds_security_timed_cb.h
+  dds_security_types.h
+  dds_security_utils.h
+  dds_security_shared_secret.h)
+prepend(headers "${CMAKE_CURRENT_LIST_DIR}/include/dds/security/core" ${headers})
 
 if(NOT WIN32)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
@@ -24,8 +35,7 @@ endif()
 
 add_library(security_core INTERFACE)
 
-prepend(sources "${CMAKE_CURRENT_LIST_DIR}/src" ${sources})
-target_sources(security_core INTERFACE ${sources})
+target_sources(security_core INTERFACE ${sources} ${headers})
 
 target_include_directories(security_core
     INTERFACE
@@ -35,7 +45,7 @@ target_include_directories(security_core
         "$<BUILD_INTERFACE:$<TARGET_PROPERTY:ddsc,INTERFACE_INCLUDE_DIRECTORIES>>"
 )
 
-if(BUILD_TESTING AND BUILD_IDLC)
+if(BUILD_TESTING)
   add_subdirectory(tests)
 endif()
 

@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2021 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #ifndef IDL_SYMBOL_H
 #define IDL_SYMBOL_H
 
@@ -29,7 +28,7 @@ struct idl_source {
   const idl_source_t *parent;
   idl_source_t *previous, *next;
   idl_source_t *includes;
-  bool system; /**< system include */
+  bool additional_directory; /**< file does not reside in working directory */
   const idl_file_t *path; /**< normalized path of filename in #line directive */
   const idl_file_t *file; /**< filename in #line directive */
 };

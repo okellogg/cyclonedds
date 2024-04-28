@@ -1,5 +1,5 @@
 #
-# Copyright(c) 2019 ADLINK Technology Limited and others
+# Copyright(c) 2019 to 2021 ZettaScale Technology and others
 #
 # This program and the accompanying materials are made available under the
 # terms of the Eclipse Public License v. 2.0 which is available at
@@ -9,5 +9,12 @@
 #
 # SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
 #
-add_subdirectory(rhc_torture)
-add_subdirectory(initsampledeliv)
+if(BUILD_TESTING AND BUILD_IDLC)
+    include(CUnit)
+    add_subdirectory(rhc_torture)
+    add_subdirectory(initsampledeliv)
+endif()
+
+if(NOT CMAKE_CROSSCOMPILING AND NOT CMAKE_SYSTEM_NAME MATCHES "iOS" AND NOT DEFINED ENV{LIB_FUZZING_ENGINE})
+    add_subdirectory(symbol_export)
+endif()

@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2022 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <assert.h>
 #include <stddef.h>
 #include <stdlib.h>
@@ -22,11 +21,8 @@
 
 void ddsrt_mutex_init (ddsrt_mutex_t *mutex)
 {
-  int shared;
   assert (mutex != NULL);
-
   pthread_mutex_init (&mutex->mutex, NULL);
-  (void)shared;
 }
 
 void ddsrt_mutex_destroy (ddsrt_mutex_t *mutex)
@@ -123,6 +119,7 @@ ddsrt_cond_waituntil(
   }
 
   abort();
+  return false;
 }
 
 bool
@@ -161,17 +158,27 @@ ddsrt_rwlock_init (ddsrt_rwlock_t *rwlock)
 {
   assert(rwlock != NULL);
 
+#if __SunOS_5_6
+  if (pthread_mutex_init(&rwlock->rwlock, NULL) != 0)
+    abort();
+#else
   /* process-shared attribute is set to PTHREAD_PROCESS_PRIVATE by default */
   if (pthread_rwlock_init(&rwlock->rwlock, NULL) != 0)
     abort();
+#endif
 }
 
 void
 ddsrt_rwlock_destroy (ddsrt_rwlock_t *rwlock)
 {
   assert(rwlock != NULL);
-  if (pthread_rwlock_destroy (&rwlock->rwlock) != 0)
+#if __SunOS_5_6
+  if (pthread_mutex_destroy(&rwlock->rwlock) != 0)
     abort();
+#else
+  if (pthread_rwlock_destroy(&rwlock->rwlock) != 0)
+    abort();
+#endif
 }
 
 void ddsrt_rwlock_read (ddsrt_rwlock_t *rwlock)
@@ -179,7 +186,11 @@ void ddsrt_rwlock_read (ddsrt_rwlock_t *rwlock)
   int err;
 
   assert(rwlock != NULL);
+#if __SunOS_5_6
+  err = pthread_mutex_lock(&rwlock->rwlock);
+#else
   err = pthread_rwlock_rdlock(&rwlock->rwlock);
+#endif
   assert(err == 0);
   (void)err;
 }
@@ -189,7 +200,11 @@ void ddsrt_rwlock_write (ddsrt_rwlock_t *rwlock)
   int err;
 
   assert(rwlock != NULL);
+#if __SunOS_5_6
+  err = pthread_mutex_lock(&rwlock->rwlock);
+#else
   err = pthread_rwlock_wrlock(&rwlock->rwlock);
+#endif
   assert(err == 0);
   (void)err;
 }
@@ -199,7 +214,11 @@ bool ddsrt_rwlock_tryread (ddsrt_rwlock_t *rwlock)
   int err;
 
   assert(rwlock != NULL);
+#if __SunOS_5_6
+  err = pthread_mutex_trylock(&rwlock->rwlock);
+#else
   err = pthread_rwlock_tryrdlock(&rwlock->rwlock);
+#endif
   assert(err == 0 || err == EBUSY);
   return err == 0;
 }
@@ -209,7 +228,11 @@ bool ddsrt_rwlock_trywrite (ddsrt_rwlock_t *rwlock)
   int err;
 
   assert(rwlock != NULL);
+#if __SunOS_5_6
+  err = pthread_mutex_trylock(&rwlock->rwlock);
+#else
   err = pthread_rwlock_trywrlock(&rwlock->rwlock);
+#endif
   assert(err == 0 || err == EBUSY);
 
   return err == 0;
@@ -220,7 +243,11 @@ void ddsrt_rwlock_unlock (ddsrt_rwlock_t *rwlock)
   int err;
 
   assert(rwlock != NULL);
+#if __SunOS_5_6
+  err = pthread_mutex_unlock(&rwlock->rwlock);
+#else
   err = pthread_rwlock_unlock(&rwlock->rwlock);
+#endif
   assert(err == 0);
   (void)err;
 }

@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2019 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <string.h>
 #include "dds/ddsrt/heap.h"
 #include "dds/ddsrt/string.h"
@@ -21,9 +20,7 @@
 #include "cryptography.h"
 #include "crypto_key_exchange.h"
 #include "crypto_key_factory.h"
-
-static const char *CRYPTO_TOKEN_CLASS_ID = "DDS:Crypto:AES_GCM_GMAC";
-static const char *CRYPTO_TOKEN_PROPERTY_NAME = "dds.cryp.keymat";
+#include "crypto_tokens.h"
 
 /**
  * Implementation structure for storing encapsulated members of the instance
@@ -47,11 +44,11 @@ static bool check_crypto_tokens(const DDS_Security_DataHolderSeq *tokens)
   for (i = 0; status && (i < tokens->_length); i++)
   {
     status = (tokens->_buffer[i].class_id != NULL) &&
-             (strcmp(CRYPTO_TOKEN_CLASS_ID, tokens->_buffer[i].class_id) == 0) &&
+             (strcmp(DDS_CRYPTOTOKEN_CLASS_ID, tokens->_buffer[i].class_id) == 0) &&
              (tokens->_buffer[i].binary_properties._length == 1) &&
              (tokens->_buffer[i].binary_properties._buffer != NULL) &&
              (tokens->_buffer[i].binary_properties._buffer[0].name != NULL) &&
-             (strcmp(CRYPTO_TOKEN_PROPERTY_NAME, tokens->_buffer[i].binary_properties._buffer[0].name) == 0) &&
+             (strcmp(DDS_CRYPTOTOKEN_PROP_KEYMAT, tokens->_buffer[i].binary_properties._buffer[0].name) == 0) &&
              (tokens->_buffer[i].binary_properties._buffer[0].value._length > 0) &&
              (tokens->_buffer[i].binary_properties._buffer[0].value._buffer != NULL);
   }
@@ -136,17 +133,23 @@ serialize_master_key_material(
 
   sd[i++] = ddsrt_toBE4u(keymat->transformation_kind);
   sd[i++] = ddsrt_toBE4u(key_bytes);
-  memcpy(&sd[i], keymat->master_salt, key_bytes);
+  if (key_bytes > 0) {
+    memcpy(&sd[i], keymat->master_salt, key_bytes);
+  }
   i += key_bytes / sizeof (uint32_t);
   sd[i++] = ddsrt_toBE4u(keymat->sender_key_id);
   sd[i++] = ddsrt_toBE4u(key_bytes);
-  memcpy(&sd[i], keymat->master_sender_key, key_bytes);
+  if (key_bytes > 0) {
+    memcpy(&sd[i], keymat->master_sender_key, key_bytes);
+  }
   i += key_bytes / sizeof (uint32_t);
   sd[i++] = ddsrt_toBE4u(keymat->receiver_specific_key_id);
   if (keymat->receiver_specific_key_id)
   {
     sd[i++] = ddsrt_toBE4u(key_bytes);
-    memcpy(&sd[i], keymat->master_receiver_specific_key, key_bytes);
+    if (key_bytes > 0) {
+      memcpy(&sd[i], keymat->master_receiver_specific_key, key_bytes);
+    }
   }
   else
   {
@@ -187,10 +190,10 @@ create_local_participant_crypto_tokens(
 
   tokens->_buffer = DDS_Security_DataHolderSeq_allocbuf(1);
   tokens->_length = tokens->_maximum = 1;
-  tokens->_buffer[0].class_id = ddsrt_strdup(CRYPTO_TOKEN_CLASS_ID);
+  tokens->_buffer[0].class_id = ddsrt_strdup(DDS_CRYPTOTOKEN_CLASS_ID);
   tokens->_buffer[0].binary_properties._buffer = DDS_Security_BinaryPropertySeq_allocbuf(1);
   tokens->_buffer[0].binary_properties._length = tokens->_buffer[0].binary_properties._maximum = 1;
-  tokens->_buffer[0].binary_properties._buffer[0].name = ddsrt_strdup(CRYPTO_TOKEN_PROPERTY_NAME);
+  tokens->_buffer[0].binary_properties._buffer[0].name = ddsrt_strdup(DDS_CRYPTOTOKEN_PROP_KEYMAT);
   tokens->_buffer[0].binary_properties._buffer[0].value._length =
       tokens->_buffer[0].binary_properties._buffer[0].value._maximum = length;
   tokens->_buffer[0].binary_properties._buffer[0].value._buffer = buffer;
@@ -323,10 +326,10 @@ create_local_datawriter_crypto_tokens(
 
     serialize_master_key_material(key_mat[i], &buffer, &length);
 
-    tokens->_buffer[i].class_id = ddsrt_strdup(CRYPTO_TOKEN_CLASS_ID);
+    tokens->_buffer[i].class_id = ddsrt_strdup(DDS_CRYPTOTOKEN_CLASS_ID);
     tokens->_buffer[i].binary_properties._buffer = DDS_Security_BinaryPropertySeq_allocbuf(1);
     tokens->_buffer[i].binary_properties._length = tokens->_buffer[0].binary_properties._maximum = 1;
-    tokens->_buffer[i].binary_properties._buffer[0].name = ddsrt_strdup(CRYPTO_TOKEN_PROPERTY_NAME);
+    tokens->_buffer[i].binary_properties._buffer[0].name = ddsrt_strdup(DDS_CRYPTOTOKEN_PROP_KEYMAT);
     tokens->_buffer[i].binary_properties._buffer[0].value._length =
         tokens->_buffer[i].binary_properties._buffer[0].value._maximum = length;
     tokens->_buffer[i].binary_properties._buffer[0].value._buffer = buffer;
@@ -446,10 +449,10 @@ create_local_datareader_crypto_tokens(
     tokens->_buffer = DDS_Security_DataHolderSeq_allocbuf(1);
     tokens->_length = tokens->_maximum = 1;
 
-    tokens->_buffer[0].class_id = ddsrt_strdup(CRYPTO_TOKEN_CLASS_ID);
+    tokens->_buffer[0].class_id = ddsrt_strdup(DDS_CRYPTOTOKEN_CLASS_ID);
     tokens->_buffer[0].binary_properties._buffer = DDS_Security_BinaryPropertySeq_allocbuf(1);
     tokens->_buffer[0].binary_properties._length = tokens->_buffer[0].binary_properties._maximum = 1;
-    tokens->_buffer[0].binary_properties._buffer[0].name = ddsrt_strdup(CRYPTO_TOKEN_PROPERTY_NAME);
+    tokens->_buffer[0].binary_properties._buffer[0].name = ddsrt_strdup(DDS_CRYPTOTOKEN_PROP_KEYMAT);
     tokens->_buffer[0].binary_properties._buffer[0].value._length =
         tokens->_buffer[0].binary_properties._buffer[0].value._maximum = length;
     tokens->_buffer[0].binary_properties._buffer[0].value._buffer = buffer;

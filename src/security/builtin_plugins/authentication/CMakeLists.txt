@@ -1,5 +1,5 @@
 #
-# Copyright(c) 2006 to 2019 ADLINK Technology Limited and others
+# Copyright(c) 2006 to 2021 ZettaScale Technology and others
 #
 # This program and the accompanying materials are made available under the
 # terms of the Eclipse Public License v. 2.0 which is available at
@@ -13,13 +13,21 @@ include(GenerateExportHeader)
 
 set(sources
   src/authentication.c
-  src/auth_utils.c)
+  src/auth_utils.c
+  ../include/auth_tokens.h
+  ../include/ac_tokens.h)
 
 set(private_headers
   src/authentication.h
   src/auth_utils.h)
 
-add_library(dds_security_auth SHARED ${sources} ${private_headers})
+if(BUILD_SHARED_LIBS)
+  add_library(dds_security_auth SHARED ${sources} ${private_headers})
+else()
+  add_library(dds_security_auth OBJECT ${sources} ${private_headers})
+  set_property(GLOBAL APPEND PROPERTY cdds_plugin_list dds_security_auth)
+  set_property(GLOBAL PROPERTY dds_security_auth_symbols init_authentication finalize_authentication)
+endif()
 
 generate_export_header(
         dds_security_auth
@@ -28,7 +36,9 @@ generate_export_header(
 )
 
 target_link_libraries(dds_security_auth PRIVATE security_openssl)
-target_link_libraries(dds_security_auth PUBLIC ddsc)
+if(BUILD_SHARED_LIBS)
+  target_link_libraries(dds_security_auth PUBLIC ddsc)
+endif()
 target_link_libraries(dds_security_auth PUBLIC OpenSSL::SSL)
 if(CMAKE_GENERATOR MATCHES "Visual Studio")
   set_target_properties(dds_security_auth PROPERTIES LINK_FLAGS "/ignore:4099")
@@ -42,6 +52,7 @@ target_include_directories(dds_security_auth
         "$<BUILD_INTERFACE:$<TARGET_PROPERTY:security_openssl,INTERFACE_INCLUDE_DIRECTORIES>>"
         "$<BUILD_INTERFACE:$<TARGET_PROPERTY:ddsrt,INTERFACE_INCLUDE_DIRECTORIES>>"
         "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>"
+        "$<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/../include>"
         "$<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/../../../core/ddsi/include>"
 )
 
@@ -51,7 +62,7 @@ install(
   RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT lib
   LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}" COMPONENT lib
   ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}" COMPONENT lib)
-if (MSVC)
+if (INSTALL_PDB)
   install(FILES $<TARGET_PDB_FILE:dds_security_auth>
     DESTINATION "${CMAKE_INSTALL_BINDIR}"
     COMPONENT dev

@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include "dds/dds.h"
 #include "dds/ddsrt/misc.h"
 #include "dds/ddsrt/atomics.h"
@@ -584,7 +583,7 @@ CU_Test(ddsc_readcondition, stress)
 
     conds[condidx] = dds_create_readcondition (rd, DDS_ANY_STATE);
     CU_ASSERT_FATAL (conds[condidx] > 0);
-    
+
     // the fact that read conditions get updated even when not attached to a waitset is
     // probably a bug, so let's attach it to a waitset for good measure
     rc = dds_waitset_attach (ws, conds[condidx], conds[condidx]);

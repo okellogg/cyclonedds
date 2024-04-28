@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2019 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2020 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -234,7 +233,7 @@ static bool PKCS7_document_from_data(const char *data, size_t len, PKCS7 **p7, B
 static bool PKCS7_document_verify(PKCS7 *p7, X509 *cert, BIO *inbio, BIO **outbio, DDS_Security_SecurityException *ex)
 {
   bool result = false;
-  X509_STORE *store = NULL;
+  STACK_OF(X509) *certStack = NULL;
 
   assert(p7);
   assert(cert);
@@ -243,18 +242,18 @@ static bool PKCS7_document_verify(PKCS7 *p7, X509 *cert, BIO *inbio, BIO **outbi
 
   if ((*outbio = BIO_new(BIO_s_mem())) == NULL)
     DDS_Security_Exception_set_with_openssl_error(ex, DDS_ACCESS_CONTROL_PLUGIN_CONTEXT, DDS_SECURITY_ERR_ALLOCATION_FAILED_CODE, 0, DDS_SECURITY_ERR_ALLOCATION_FAILED_MESSAGE ": ");
-  else if ((store = X509_STORE_new()) == NULL)
+  else if ((certStack = sk_X509_new_null()) == NULL)
     DDS_Security_Exception_set_with_openssl_error(ex, DDS_ACCESS_CONTROL_PLUGIN_CONTEXT, DDS_SECURITY_ERR_ALLOCATION_FAILED_CODE, 0, DDS_SECURITY_ERR_ALLOCATION_FAILED_MESSAGE ": ");
   else
   {
-    X509_STORE_add_cert(store, cert);
-    if (PKCS7_verify(p7, NULL, store, inbio, *outbio, PKCS7_TEXT) != 1)
+    sk_X509_push(certStack, cert);
+    if (PKCS7_verify(p7, certStack, NULL, inbio, *outbio, PKCS7_TEXT | PKCS7_NOVERIFY | PKCS7_NOINTERN) != 1)
       DDS_Security_Exception_set_with_openssl_error(ex, DDS_ACCESS_CONTROL_PLUGIN_CONTEXT, DDS_SECURITY_ERR_INVALID_SMIME_DOCUMENT_CODE, 0, DDS_SECURITY_ERR_INVALID_SMIME_DOCUMENT_MESSAGE ": ");
     else
       result = true;
   }
-  if (store)
-    X509_STORE_free(store);
+  if (certStack)
+      sk_X509_free(certStack);
   if (!result && *outbio)
   {
     BIO_free(*outbio);
@@ -303,6 +302,8 @@ static bool string_to_properties(const char *str, DDS_Security_PropertySeq *prop
     if (strlen(tok) == 0)
       continue;
     char *name = ddsrt_strsep (&tok, "=");
+    name = ddsrt_str_trim_ord_space(name);
+    tok = ddsrt_str_trim_ord_space(tok);
     if (name == NULL || tok == NULL || properties->_length >= properties->_maximum)
     {
       ddsrt_free (copy);
@@ -332,6 +333,8 @@ bool ac_check_subjects_are_equal(const char *permissions_sn, const char *identit
   {
     char *value_pmsn;
     char *name_idsn = ddsrt_strsep (&tok_idsn, "=");
+    name_idsn = ddsrt_str_trim_ord_space(name_idsn);
+    tok_idsn = ddsrt_str_trim_ord_space(tok_idsn);
     if (name_idsn == NULL || tok_idsn == NULL)
       goto check_subj_equal_failed;
     value_pmsn = DDS_Security_Property_get_value(&prop_pmsn, name_idsn);

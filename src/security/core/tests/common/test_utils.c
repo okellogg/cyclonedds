@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2020 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <stdlib.h>
 #include <assert.h>
 
@@ -18,9 +17,11 @@
 #include "dds/ddsrt/string.h"
 #include "dds/ddsrt/threads.h"
 #include "dds/ddsrt/heap.h"
-#include "dds/ddsi/q_entity.h"
 #include "dds/ddsi/ddsi_entity_index.h"
 #include "dds/ddsi/ddsi_security_omg.h"
+#include "dds/ddsi/ddsi_participant.h"
+#include "ddsi__security_omg.h"
+#include "ddsi__participant.h"
 #include "dds__entity.h"
 #include "dds/security/dds_security_api.h"
 #include "authentication_wrapper.h"
@@ -583,11 +584,11 @@ void write_read_for(dds_entity_t wr, dds_entity_t pp_rd, dds_entity_t rd, dds_du
     struct dds_entity *pp_entity = NULL; \
     dds_return_t ret = dds_entity_lock (participant, DDS_KIND_PARTICIPANT, &pp_entity); \
     CU_ASSERT_EQUAL_FATAL (ret, 0); \
-    thread_state_awake (lookup_thread_state(), &pp_entity->m_domain->gv); \
-    struct participant *pp = entidx_lookup_participant_guid (pp_entity->m_domain->gv.entity_index, &pp_entity->m_guid); \
+    ddsi_thread_state_awake (ddsi_lookup_thread_state(), &pp_entity->m_domain->gv); \
+    struct ddsi_participant *pp = ddsi_entidx_lookup_participant_guid (pp_entity->m_domain->gv.entity_index, &pp_entity->m_guid); \
     CU_ASSERT_FATAL (pp != NULL); \
-    struct dds_security_##name_##_impl *context = (struct dds_security_##name_##_impl *) q_omg_participant_get_##name_ (pp); \
-    thread_state_asleep (lookup_thread_state ()); \
+    struct dds_security_##name_##_impl *context = (struct dds_security_##name_##_impl *) ddsi_omg_participant_get_##name_ (pp); \
+    ddsi_thread_state_asleep (ddsi_lookup_thread_state ()); \
     dds_entity_unlock (pp_entity); \
     return context; \
   }
@@ -626,16 +627,15 @@ DDS_Security_DatawriterCryptoHandle get_builtin_writer_crypto_handle(dds_entity_
 {
   DDS_Security_DatawriterCryptoHandle crypto_handle;
   struct dds_entity *pp_entity;
-  struct participant *pp;
-  struct writer *wr;
+  struct ddsi_participant *pp;
+  struct ddsi_writer *wr;
   CU_ASSERT_EQUAL_FATAL(dds_entity_pin(participant, &pp_entity), 0);
-  thread_state_awake(lookup_thread_state(), &pp_entity->m_domain->gv);
-  pp = entidx_lookup_participant_guid(pp_entity->m_domain->gv.entity_index, &pp_entity->m_guid);
-  wr = get_builtin_writer(pp, entityid);
+  ddsi_thread_state_awake(ddsi_lookup_thread_state(), &pp_entity->m_domain->gv);
+  pp = ddsi_entidx_lookup_participant_guid(pp_entity->m_domain->gv.entity_index, &pp_entity->m_guid);
+  wr = ddsi_get_builtin_writer (pp, entityid);
   CU_ASSERT_FATAL(wr != NULL);
-  assert(wr != NULL); /* for Clang's static analyzer */
   crypto_handle = wr->sec_attr->crypto_handle;
-  thread_state_asleep(lookup_thread_state());
+  ddsi_thread_state_asleep(ddsi_lookup_thread_state());
   dds_entity_unpin(pp_entity);
   return crypto_handle;
 }
@@ -644,14 +644,13 @@ DDS_Security_DatawriterCryptoHandle get_writer_crypto_handle(dds_entity_t writer
 {
   DDS_Security_DatawriterCryptoHandle crypto_handle;
   struct dds_entity *wr_entity;
-  struct writer *wr;
+  struct ddsi_writer *wr;
   CU_ASSERT_EQUAL_FATAL(dds_entity_pin(writer, &wr_entity), 0);
-  thread_state_awake(lookup_thread_state(), &wr_entity->m_domain->gv);
-  wr = entidx_lookup_writer_guid(wr_entity->m_domain->gv.entity_index, &wr_entity->m_guid);
+  ddsi_thread_state_awake(ddsi_lookup_thread_state(), &wr_entity->m_domain->gv);
+  wr = ddsi_entidx_lookup_writer_guid (wr_entity->m_domain->gv.entity_index, &wr_entity->m_guid);
   CU_ASSERT_FATAL(wr != NULL);
-  assert(wr != NULL); /* for Clang's static analyzer */
   crypto_handle = wr->sec_attr->crypto_handle;
-  thread_state_asleep(lookup_thread_state());
+  ddsi_thread_state_asleep(ddsi_lookup_thread_state());
   dds_entity_unpin(wr_entity);
   return crypto_handle;
 }

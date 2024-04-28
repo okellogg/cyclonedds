@@ -1,28 +1,21 @@
+// Copyright(c) 2006 to 2022 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
 
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
-#ifndef DDSRT_LIBRARY_H
-#define DDSRT_LIBRARY_H
+#ifndef DDSRT_DYNLIB_H
+#define DDSRT_DYNLIB_H
 
 #include "dds/export.h"
+#include "dds/config.h"
 #include "dds/ddsrt/types.h"
 #include "dds/ddsrt/retcode.h"
 #include "dds/ddsrt/attributes.h"
-
-#if !DDSRT_WITH_FREERTOS
-#define DDSRT_HAVE_DYNLIB (1)
-#else
-#define DDSRT_HAVE_DYNLIB (0)
-#endif
 
 #if DDSRT_HAVE_DYNLIB
 
@@ -65,8 +58,14 @@ typedef struct ddsrt_dynlib *ddsrt_dynlib_t;
  *             Loading failed.
  *             Use ddsrt_dlerror() to diagnose the failure.
  */
-DDS_EXPORT dds_return_t
+dds_return_t
 ddsrt_dlopen(
+    const char *name,
+    bool translate,
+    ddsrt_dynlib_t *handle) ddsrt_nonnull_all;
+
+dds_return_t
+ddsrt_platform_dlopen(
     const char *name,
     bool translate,
     ddsrt_dynlib_t *handle) ddsrt_nonnull_all;
@@ -89,8 +88,12 @@ ddsrt_dlopen(
  *             Library closing failed.
  *             Use ddsrt_dlerror() to diagnose the failure.
  */
-DDS_EXPORT dds_return_t
+dds_return_t
 ddsrt_dlclose(
+    ddsrt_dynlib_t handle);
+
+dds_return_t
+ddsrt_platform_dlclose(
     ddsrt_dynlib_t handle);
 
 /**
@@ -112,8 +115,14 @@ ddsrt_dlclose(
  *             Symbol was not found.
  *             Use ddsrt_dlerror() to diagnose the failure.
  */
-DDS_EXPORT dds_return_t
+dds_return_t
 ddsrt_dlsym(
+    ddsrt_dynlib_t handle,
+    const char *symbol,
+    void **address);
+
+dds_return_t
+ddsrt_platform_dlsym(
     ddsrt_dynlib_t handle,
     const char *symbol,
     void **address);
@@ -140,8 +149,13 @@ ddsrt_dlsym(
  * @retval DDS_RETCODE_NOT_ENOUGH_SPACE
  *             Buffer is not large enough to hold the error message
  */
-DDS_EXPORT dds_return_t
+dds_return_t
 ddsrt_dlerror(
+    char *buf,
+    size_t buflen);
+
+dds_return_t
+ddsrt_platform_dlerror(
     char *buf,
     size_t buflen);
 
@@ -151,4 +165,4 @@ ddsrt_dlerror(
 
 #endif /* DDSRT_HAVE_DYNLIB */
 
-#endif /* DDSRT_LIBRARY_H */
+#endif /* DDSRT_DYNLIB_H */

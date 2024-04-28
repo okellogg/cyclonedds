@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2019 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <assert.h>
 
 #include "dds/ddsrt/environ.h"
@@ -23,13 +22,6 @@
 #include "CUnit/Test.h"
 #include "common/src/loader.h"
 #include "config_env.h"
-
-static const char *PROPERTY_IDENTITY_CA = "dds.sec.auth.identity_ca";
-static const char *PROPERTY_PRIVATE_KEY = "dds.sec.auth.private_key";
-static const char *PROPERTY_IDENTITY_CERT = "dds.sec.auth.identity_certificate";
-static const char *PROPERTY_PERMISSIONS_CA = "dds.sec.access.permissions_ca";
-static const char *PROPERTY_PERMISSIONS = "dds.sec.access.permissions";
-static const char *PROPERTY_GOVERNANCE = "dds.sec.access.governance";
 
 static const char *RELATIVE_PATH_TO_ETC_DIR = "/validate_local_permissions/etc/";
 
@@ -230,18 +222,18 @@ static void fill_property_policy(DDS_Security_PropertyQosPolicy *property, const
 {
   dds_security_property_init(&property->value, 6);
   /* Authentication properties. */
-  property->value._buffer[0].name = ddsrt_strdup(PROPERTY_IDENTITY_CERT);
+  property->value._buffer[0].name = ddsrt_strdup(DDS_SEC_PROP_AUTH_IDENTITY_CERT);
   property->value._buffer[0].value = ddsrt_strdup(AUTH_IDENTITY_CERT);
-  property->value._buffer[1].name = ddsrt_strdup(PROPERTY_IDENTITY_CA);
+  property->value._buffer[1].name = ddsrt_strdup(DDS_SEC_PROP_AUTH_IDENTITY_CA);
   property->value._buffer[1].value = ddsrt_strdup(AUTH_IDENTITY_CA);
-  property->value._buffer[2].name = ddsrt_strdup(PROPERTY_PRIVATE_KEY);
+  property->value._buffer[2].name = ddsrt_strdup(DDS_SEC_PROP_AUTH_PRIV_KEY);
   property->value._buffer[2].value = ddsrt_strdup(AUTH_PRIVATE_KEY);
   /* AccessControl properties. */
-  property->value._buffer[3].name = ddsrt_strdup(PROPERTY_PERMISSIONS_CA);
+  property->value._buffer[3].name = ddsrt_strdup(DDS_SEC_PROP_ACCESS_PERMISSIONS_CA);
   property->value._buffer[3].value = permission_ca ? ddsrt_strdup(permission_ca) : NULL;
-  property->value._buffer[4].name = ddsrt_strdup(PROPERTY_PERMISSIONS);
+  property->value._buffer[4].name = ddsrt_strdup(DDS_SEC_PROP_ACCESS_PERMISSIONS);
   property->value._buffer[4].value = permission_uri ? ddsrt_strdup(permission_uri) : NULL;
-  property->value._buffer[5].name = ddsrt_strdup(PROPERTY_GOVERNANCE);
+  property->value._buffer[5].name = ddsrt_strdup(DDS_SEC_PROP_ACCESS_GOVERNANCE);
   property->value._buffer[5].value = governance_uri ? ddsrt_strdup(governance_uri) : NULL;
 }
 
@@ -603,14 +595,13 @@ static DDS_Security_long test_corrupted_signature(bool corrupt_permissions, bool
 
   /* Corrupt the signature. */
   if (corrupt_permissions)
-    prop = dds_security_property_find(&(participant_qos.property.value), PROPERTY_PERMISSIONS);
+    prop = dds_security_property_find(&(participant_qos.property.value), DDS_SEC_PROP_ACCESS_PERMISSIONS);
   if (corrupt_governance)
-    prop = dds_security_property_find(&(participant_qos.property.value), PROPERTY_GOVERNANCE);
+    prop = dds_security_property_find(&(participant_qos.property.value), DDS_SEC_PROP_ACCESS_GOVERNANCE);
 
   /* Just some (hardcoded) sanity checks. */
   CU_ASSERT_FATAL(prop != NULL);
   CU_ASSERT_FATAL(prop->value != NULL);
-  assert(prop && prop->value); // for Clang's static analyzer
   len = strlen(prop->value);
   CU_ASSERT_FATAL(len > 2250);
 

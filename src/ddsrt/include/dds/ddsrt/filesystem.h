@@ -1,29 +1,22 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2022 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
 
-#ifndef FILESYSTEM_H
-#define FILESYSTEM_H
+#ifndef DDSRT_FILESYSTEM_H
+#define DDSRT_FILESYSTEM_H
 
 #include <stddef.h>
 
 #include "dds/export.h"
+#include "dds/config.h"
 #include "dds/ddsrt/retcode.h"
 #include "dds/ddsrt/time.h"
-
-#if !DDSRT_WITH_FREERTOS
-#define DDSRT_HAVE_FILESYSTEM (1)
-#else
-#define DDSRT_HAVE_FILESYSTEM (0)
-#endif
 
 #if DDSRT_HAVE_FILESYSTEM
 
@@ -130,4 +123,4 @@ DDS_EXPORT const char* ddsrt_file_sep(void);
 
 #endif // DDRT_HAVE_FILESYSTEM
 
-#endif // FILESYSTEM_H
+#endif // DDSRT_FILESYSTEM_H

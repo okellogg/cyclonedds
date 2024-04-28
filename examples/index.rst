@@ -1,5 +1,5 @@
 ..
-   Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
+   Copyright(c) 2006 to 2019 ZettaScale Technology and others
 
    This program and the accompanying materials are made available under the
    terms of the Eclipse Public License v. 2.0 which is available at
@@ -35,11 +35,6 @@ of the configuration file to be used.
 | *Example*
 | **Windows:** ``set CYCLONEDDS_URI=file://%USERPROFILE%/CycloneDDS/my-config.xml``
 | **Linux:** ``export CYCLONEDDS_URI="file://$HOME/CycloneDDS/my-config.xml"``
-
-The Eclipse CycloneDDS installation comes with a configuration file that corresponds to the default
-behaviour.  You can modify it or add your using any text or XML editor, or using by using the
-Eclipse CycloneDDS Configurator tool, which provides context-sensitive help on available
-configuration parameters and their applicability.
 
 One very important part of the configuration settings are the "tracing" settings: these allow
 letting Eclipse Cyclone DDS trace very detailed information to a file, and this includes the actual

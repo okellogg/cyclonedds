@@ -1,14 +1,12 @@
-/*
- * Copyright(c) 2006 to 2019 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
 
 #ifndef DSCMN_SECURITY_UTILS_H_
 #define DSCMN_SECURITY_UTILS_H_
@@ -280,7 +278,7 @@ DDS_Security_Exception_set(
          int minor_code,
          const char *fmt,
          ...)
-  ddsrt_attribute_format((printf, 5, 6))
+  ddsrt_attribute_format_printf(5, 6)
   ddsrt_nonnull_all;
 
 DDS_EXPORT void
@@ -368,13 +366,13 @@ DDS_Security_parse_xml_date(
 
 
 /* for DEBUG purposes */
-DDS_EXPORT void
+void
 print_binary_debug(
          char* name,
          unsigned char *value,
          uint32_t size);
 
-DDS_EXPORT void
+void
 print_binary_properties_debug(
          const DDS_Security_DataHolder *token);
 

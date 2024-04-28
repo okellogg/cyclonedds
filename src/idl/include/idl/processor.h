@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2021 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2021 to 2022 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #ifndef IDL_COMPILER_H
 #define IDL_COMPILER_H
 
@@ -25,6 +24,8 @@
 #include "idl/tree.h"
 #include "idl/scope.h"
 #include "idl/visit.h"
+#include "idl/attributes.h"
+#include "idl/md5.h"
 
 /* enable "#pragma keylist" for backwards compatibility */
 #define IDL_FLAG_KEYLIST (1u<<0)
@@ -41,6 +42,9 @@
 /* flag used by idlc to indicate end-of-buffer (private) */
 #define IDL_WRITE (1u<<31)
 
+/* used to indicate that default extensibility is not set */
+#define IDL_DEFAULT_EXTENSIBILITY_UNDEFINED (-1)
+
 typedef struct idl_buffer idl_buffer_t;
 struct idl_buffer {
   char *data;
@@ -48,11 +52,36 @@ struct idl_buffer {
   size_t used; /**< number of bytes used */
 };
 
+typedef struct idl_typeinfo_typemap idl_typeinfo_typemap_t;
+struct idl_typeinfo_typemap {
+  unsigned char *typeinfo;
+  size_t typeinfo_size;
+  unsigned char *typemap;
+  size_t typemap_size;
+};
+
+typedef enum idl_warning {
+  IDL_WARN_GENERIC,
+  IDL_WARN_IMPLICIT_EXTENSIBILITY,
+  IDL_WARN_EXTRA_TOKEN_DIRECTIVE,
+  IDL_WARN_UNKNOWN_ESCAPE_SEQ,
+  IDL_WARN_INHERIT_APPENDABLE,
+  IDL_WARN_ENUM_CONSECUTIVE,
+  IDL_WARN_UNSUPPORTED_ANNOTATIONS
+} idl_warning_t;
+
+typedef bool (*track_warning_fn)(idl_warning_t warning);
+
 typedef struct idl_pstate idl_pstate_t;
 struct idl_pstate {
   bool keylists;
   bool annotations;
-  uint32_t flags; /**< processor options */
+  struct {
+    uint32_t flags; /**< processor options */
+    int default_extensibility; /**< default extensibility for aggregated types */
+    bool default_nested; /**< default nestedness for aggregated types */
+  } config;
+  track_warning_fn track_warning;
   idl_file_t *paths; /**< normalized paths used in include statements */
   idl_file_t *files; /**< filenames used in #line directives */
   idl_source_t *sources;
@@ -60,6 +89,7 @@ struct idl_pstate {
   void *directive;
   idl_node_t *builtin_root, *root;
   idl_buffer_t buffer; /**< dynamically sized input buffer */
+  idl_md5_byte_t digest[16]; /**< md5 digest of idl source */
   struct {
     enum {
       IDL_SCAN,
@@ -68,8 +98,9 @@ struct idl_pstate {
       IDL_SCAN_DIRECTIVE_NAME,
       /** scanning #line directive */
       IDL_SCAN_LINE = (IDL_SCAN_DIRECTIVE | (1<<6)),
-      IDL_SCAN_FILENAME,
+      IDL_SCAN_PATH,
       IDL_SCAN_FLAGS,
+      IDL_SCAN_FILE,
       IDL_SCAN_EXTRA_TOKENS,
       /** scanning #pragma directive */
       IDL_SCAN_PRAGMA = (IDL_SCAN_DIRECTIVE | (1<<5)),
@@ -141,12 +172,14 @@ IDL_EXPORT idl_retcode_t
 idl_parse_string(idl_pstate_t *pstate, const char *str);
 
 IDL_EXPORT void
-idl_verror(idl_pstate_t *pstate, const idl_location_t *loc, const char *fmt, va_list ap);
+idl_verror(const idl_pstate_t *pstate, const idl_location_t *loc, const char *fmt, va_list ap);
 
 IDL_EXPORT void
-idl_error(idl_pstate_t *pstate, const idl_location_t *loc, const char *fmt, ...);
+idl_error(const idl_pstate_t *pstate, const idl_location_t *loc, const char *fmt, ...)
+  idl_attribute_format_printf(3, 4);
 
 IDL_EXPORT void
-idl_warning(idl_pstate_t *pstate, const idl_location_t *loc, const char *fmt, ...);
+idl_warning(const idl_pstate_t *pstate, idl_warning_t warning, const idl_location_t *loc, const char *fmt, ...)
+  idl_attribute_format_printf(4, 5);
 
 #endif /* IDL_COMPILER_H */

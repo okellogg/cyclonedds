@@ -1,5 +1,5 @@
 ..
-   Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
+   Copyright(c) 2006 to 2021 ZettaScale Technology and others
 
    This program and the accompanying materials are made available under the
    terms of the Eclipse Public License v. 2.0 which is available at
@@ -9,23 +9,29 @@
 
    SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
 
-.. Eclipse Cyclone DDS documentation master file
+.. _documentation_top:
 
-Welcome to Eclipse Cyclone DDS's documentation!
-===============================================
+.. image:: _static/gettingstarted-figures/Cyclone_DDS_logo.svg
+
+|var-project| |var-release| documentation
+=========================================
 
 .. toctree::
-   :maxdepth: 3
-   :caption: Contents
+   :maxdepth: 1
 
-   GettingStartedGuide/index
-   config
-   security
+   about_dds/eclipse_cyclone_dds
+   installation/installation
+   getting_started/index
+   config/index
+   examples/index
+   security/dds_security
+   shared_memory/shared_memory
    ddsc
+   glossary
+   genindex
 
 Indices and tables
 ==================
 
-* :ref:`genindex`
 * :ref:`modindex`
 * :ref:`search`

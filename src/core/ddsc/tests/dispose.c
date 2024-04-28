@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2020 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <limits.h>
 
 #include "dds/dds.h"
@@ -178,9 +177,11 @@ CU_TheoryDataPoints(ddsc_writedispose, non_writers) = {
 };
 CU_Theory((dds_entity_t *writer), ddsc_writedispose, non_writers, .init=disposing_init, .fini=disposing_fini)
 {
+    Space_Type1 data = { 0, 22, 22 };
     dds_return_t ret;
+
     DDSRT_WARNING_MSVC_OFF(6387); /* Disable SAL warning on intentional misuse of the API */
-    ret = dds_writedispose(*writer, NULL);
+    ret = dds_writedispose(*writer, &data);
     DDSRT_WARNING_MSVC_ON(6387);
     CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_ILLEGAL_OPERATION);
 }
@@ -348,9 +349,10 @@ CU_TheoryDataPoints(ddsc_writedispose_ts, non_writers) = {
 };
 CU_Theory((dds_entity_t *writer), ddsc_writedispose_ts, non_writers, .init=disposing_init, .fini=disposing_fini)
 {
+    Space_Type1 data = { 0, 22, 22 };
     dds_return_t ret;
     DDSRT_WARNING_MSVC_OFF(6387); /* Disable SAL warning on intentional misuse of the API */
-    ret = dds_writedispose_ts(*writer, NULL, g_present);
+    ret = dds_writedispose_ts(*writer, &data, g_present);
     DDSRT_WARNING_MSVC_ON(6387);
     CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_ILLEGAL_OPERATION);
 }

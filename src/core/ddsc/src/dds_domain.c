@@ -1,33 +1,36 @@
-/*
- * Copyright(c) 2006 to 2019 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2022 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <string.h>
 
+#include "dds/features.h"
 #include "dds/ddsrt/process.h"
 #include "dds/ddsrt/heap.h"
 #include "dds/ddsrt/hopscotch.h"
-#include "dds__init.h"
-#include "dds/ddsc/dds_rhc.h"
-#include "dds__domain.h"
-#include "dds__builtin.h"
-#include "dds__whc_builtintopic.h"
-#include "dds__entity.h"
 #include "dds/ddsi/ddsi_iid.h"
 #include "dds/ddsi/ddsi_tkmap.h"
 #include "dds/ddsi/ddsi_serdata.h"
 #include "dds/ddsi/ddsi_threadmon.h"
-#include "dds/ddsi/q_entity.h"
-#include "dds/ddsi/q_config.h"
-#include "dds/ddsi/q_gc.h"
+#include "dds/ddsi/ddsi_entity.h"
+#include "dds/ddsi/ddsi_gc.h"
 #include "dds/ddsi/ddsi_domaingv.h"
+#include "dds/ddsi/ddsi_typelib.h"
+#include "dds/ddsi/ddsi_init.h"
+#include "dds/ddsc/dds_rhc.h"
+#include "dds__init.h"
+#include "dds__domain.h"
+#include "dds__builtin.h"
+#include "dds__whc_builtintopic.h"
+#include "dds__entity.h"
+#include "dds__serdata_default.h"
+#include "dds__psmx.h"
 
 static dds_return_t dds_domain_free (dds_entity *vdomain);
 
@@ -38,7 +41,8 @@ const struct dds_entity_deriver dds_entity_deriver_domain = {
   .set_qos = dds_entity_deriver_dummy_set_qos,
   .validate_status = dds_entity_deriver_dummy_validate_status,
   .create_statistics = dds_entity_deriver_dummy_create_statistics,
-  .refresh_statistics = dds_entity_deriver_dummy_refresh_statistics
+  .refresh_statistics = dds_entity_deriver_dummy_refresh_statistics,
+  .invoke_cbs_for_pending_events = dds_entity_deriver_dummy_invoke_cbs_for_pending_events
 };
 
 static int dds_domain_compare (const void *va, const void *vb)
@@ -49,7 +53,7 @@ static int dds_domain_compare (const void *va, const void *vb)
 }
 
 static const ddsrt_avl_treedef_t dds_domaintree_def = DDSRT_AVL_TREEDEF_INITIALIZER (
-  offsetof (dds_domain, m_node), offsetof (dds_domain, m_id), dds_domain_compare, 0);
+  offsetof (dds_domain, m_node), offsetof (dds_domain, m_id), dds_domain_compare, NULL);
 
 struct config_source {
   enum { CFGKIND_XML, CFGKIND_RAW } kind;
@@ -61,10 +65,9 @@ struct config_source {
 
 static dds_entity_t dds_domain_init (dds_domain *domain, dds_domainid_t domain_id, const struct config_source *config, bool implicit)
 {
-  dds_entity_t domh;
-  uint32_t len;
+  dds_entity_t ret, domh;
 
-  if ((domh = dds_entity_init (&domain->m_entity, &dds_global.m_entity, DDS_KIND_DOMAIN, implicit, NULL, NULL, 0)) < 0)
+  if ((domh = dds_entity_init (&domain->m_entity, &dds_global.m_entity, DDS_KIND_DOMAIN, implicit, true, NULL, NULL, 0)) < 0)
     return domh;
   domain->m_entity.m_domain = domain;
   domain->m_entity.m_iid = ddsi_iid_gen ();
@@ -103,11 +106,11 @@ static dds_entity_t dds_domain_init (dds_domain *domain, dds_domainid_t domain_i
       break;
 
     case CFGKIND_XML:
-      domain->cfgst = config_init (config->u.xml, &domain->gv.config, domain_id);
+      domain->cfgst = ddsi_config_init (config->u.xml, &domain->gv.config, domain_id);
       if (domain->cfgst == NULL)
       {
         DDS_ILOG (DDS_LC_CONFIG, domain_id, "Failed to parse configuration\n");
-        domh = DDS_RETCODE_ERROR;
+        ret = DDS_RETCODE_ERROR;
         goto fail_config;
       }
       assert (domain_id == DDS_DOMAIN_DEFAULT || domain_id == domain->gv.config.domainId);
@@ -115,19 +118,37 @@ static dds_entity_t dds_domain_init (dds_domain *domain, dds_domainid_t domain_i
   }
   domain->m_id = domain->gv.config.domainId;
 
-  if (rtps_config_prep (&domain->gv, domain->cfgst) != 0)
+  if (ddsi_config_prep (&domain->gv, domain->cfgst) != 0)
   {
     DDS_ILOG (DDS_LC_CONFIG, domain->m_id, "Failed to configure RTPS\n");
-    domh = DDS_RETCODE_ERROR;
-    goto fail_rtps_config;
+    ret = DDS_RETCODE_ERROR;
+    goto fail_ddsi_config;
   }
 
-  if (rtps_init (&domain->gv) < 0)
+  if ((ret = dds_pubsub_message_exchange_init (&domain->gv, domain)) != DDS_RETCODE_OK)
+    goto fail_psmx_init;
+
+  struct ddsi_psmx_instance_locators psmx_locators;
+  psmx_locators.length = domain->psmx_instances.length;
+  psmx_locators.instances = dds_alloc (domain->psmx_instances.length * sizeof (*psmx_locators.instances));
+  for (uint32_t n = 0; n < domain->psmx_instances.length; n++)
+  {
+    psmx_locators.instances[n].psmx_instance_name = dds_string_dup (domain->psmx_instances.instances[n]->instance_name);
+    psmx_locators.instances[n].locator = *domain->psmx_instances.instances[n]->locator;
+  }
+
+  ret = ddsi_init (&domain->gv, &psmx_locators);
+  for (uint32_t n = 0; n < domain->psmx_instances.length; n++)
+    dds_free (psmx_locators.instances[n].psmx_instance_name);
+  dds_free (psmx_locators.instances);
+  if (ret < 0)
   {
     DDS_ILOG (DDS_LC_CONFIG, domain->m_id, "Failed to initialize RTPS\n");
-    domh = DDS_RETCODE_ERROR;
-    goto fail_rtps_init;
+    ret = DDS_RETCODE_ERROR;
+    goto fail_ddsi_init;
   }
+
+  domain->serpool = dds_serdatapool_new ();
 
   /* Start monitoring the liveliness of threads if this is the first
      domain to configured to do so. */
@@ -140,14 +161,14 @@ static dds_entity_t dds_domain_init (dds_domain *domain, dds_domainid_t domain_i
       if (dds_global.threadmon == NULL)
       {
         DDS_ILOG (DDS_LC_CONFIG, domain->m_id, "Failed to create a thread liveliness monitor\n");
-        domh = DDS_RETCODE_OUT_OF_RESOURCES;
+        ret = DDS_RETCODE_OUT_OF_RESOURCES;
         goto fail_threadmon_new;
       }
       /* FIXME: thread properties */
       if (ddsi_threadmon_start (dds_global.threadmon, "threadmon") < 0)
       {
         DDS_ILOG (DDS_LC_ERROR, domain->m_id, "Failed to start the thread liveliness monitor\n");
-        domh = DDS_RETCODE_ERROR;
+        ret = DDS_RETCODE_ERROR;
         goto fail_threadmon_start;
       }
     }
@@ -155,19 +176,11 @@ static dds_entity_t dds_domain_init (dds_domain *domain, dds_domainid_t domain_i
 
   dds__builtin_init (domain);
 
-  /* Set additional default participant properties */
-
-  const char *progname = "UNKNOWN"; /* FIXME: once retrieving process names is back in */
-  len = (uint32_t) (strlen (progname) + 13);
-  domain->gv.default_local_plist_pp.entity_name = dds_alloc (len);
-  (void) snprintf (domain->gv.default_local_plist_pp.entity_name, len, "%s<%u>", progname, (unsigned) ddsrt_getpid ());
-  domain->gv.default_local_plist_pp.present |= PP_ENTITY_NAME;
-
-  if (rtps_start (&domain->gv) < 0)
+  if (ddsi_start (&domain->gv) < 0)
   {
     DDS_ILOG (DDS_LC_CONFIG, domain->m_id, "Failed to start RTPS\n");
-    domh = DDS_RETCODE_ERROR;
-    goto fail_rtps_start;
+    ret = DDS_RETCODE_ERROR;
+    goto fail_ddsi_start;
   }
 
   if (domain->gv.config.liveliness_monitoring)
@@ -175,7 +188,7 @@ static dds_entity_t dds_domain_init (dds_domain *domain, dds_domainid_t domain_i
   dds_entity_init_complete (&domain->m_entity);
   return domh;
 
-fail_rtps_start:
+fail_ddsi_start:
   dds__builtin_fini (domain);
   if (domain->gv.config.liveliness_monitoring && dds_global.threadmon_count == 1)
     ddsi_threadmon_stop (dds_global.threadmon);
@@ -186,14 +199,21 @@ fail_threadmon_start:
     dds_global.threadmon = NULL;
   }
 fail_threadmon_new:
-  rtps_fini (&domain->gv);
-fail_rtps_init:
-fail_rtps_config:
+  ddsi_fini (&domain->gv);
+  dds_serdatapool_free (domain->serpool);
+fail_ddsi_init:
+  for (uint32_t i = 0; i < domain->psmx_instances.length; i++)
+  {
+    domain->psmx_instances.instances[i]->ops.deinit(domain->psmx_instances.instances[i]);
+    domain->psmx_instances.instances[i] = NULL;
+  }
+fail_psmx_init:
+fail_ddsi_config:
   if (domain->cfgst)
-    config_fini (domain->cfgst);
+    ddsi_config_fini (domain->cfgst);
 fail_config:
   dds_handle_delete (&domain->m_entity.m_hdllink);
-  return domh;
+  return ret;
 }
 
 dds_domain *dds_domain_find_locked (dds_domainid_t id)
@@ -258,13 +278,13 @@ static dds_entity_t dds_domain_create_internal_xml_or_raw (dds_domain **domain_o
   return domh;
 }
 
-dds_entity_t dds_domain_create_internal (dds_domain **domain_out, dds_domainid_t id, bool implicit, const char *config_xml)
+dds_entity_t dds_domain_create_internal (dds_domain **domain_out, dds_domainid_t id, bool implicit, const char *config)
 {
-  const struct config_source config = { .kind = CFGKIND_XML, .u = { .xml = config_xml } };
-  return dds_domain_create_internal_xml_or_raw (domain_out, id, implicit, &config);
+  const struct config_source config_src = { .kind = CFGKIND_XML, .u = { .xml = config } };
+  return dds_domain_create_internal_xml_or_raw (domain_out, id, implicit, &config_src);
 }
 
-dds_entity_t dds_create_domain (const dds_domainid_t domain, const char *config_xml)
+dds_entity_t dds_create_domain (const dds_domainid_t domain, const char *config)
 {
   dds_domain *dom;
   dds_entity_t ret;
@@ -272,35 +292,35 @@ dds_entity_t dds_create_domain (const dds_domainid_t domain, const char *config_
   if (domain == DDS_DOMAIN_DEFAULT)
     return DDS_RETCODE_BAD_PARAMETER;
 
-  if (config_xml == NULL)
-    config_xml = "";
+  if (config == NULL)
+    config = "";
 
   /* Make sure DDS instance is initialized. */
   if ((ret = dds_init ()) < 0)
     return ret;
 
-  const struct config_source config = { .kind = CFGKIND_XML, .u = { .xml = config_xml } };
-  ret = dds_domain_create_internal_xml_or_raw (&dom, domain, false, &config);
+  const struct config_source config_src = { .kind = CFGKIND_XML, .u = { .xml = config } };
+  ret = dds_domain_create_internal_xml_or_raw (&dom, domain, false, &config_src);
   dds_entity_unpin_and_drop_ref (&dds_global.m_entity);
   return ret;
 }
 
-dds_entity_t dds_create_domain_with_rawconfig (const dds_domainid_t domain, const struct ddsi_config *config_raw)
+dds_entity_t dds_create_domain_with_rawconfig (const dds_domainid_t domain, const struct ddsi_config *config)
 {
   dds_domain *dom;
   dds_entity_t ret;
 
   if (domain == DDS_DOMAIN_DEFAULT)
     return DDS_RETCODE_BAD_PARAMETER;
-  if (config_raw == NULL)
+  if (config == NULL)
     return DDS_RETCODE_BAD_PARAMETER;
 
   /* Make sure DDS instance is initialized. */
   if ((ret = dds_init ()) < 0)
     return ret;
 
-  const struct config_source config = { .kind = CFGKIND_RAW, .u = { .raw = config_raw } };
-  ret = dds_domain_create_internal_xml_or_raw (&dom, domain, false, &config);
+  const struct config_source config_src = { .kind = CFGKIND_RAW, .u = { .raw = config } };
+  ret = dds_domain_create_internal_xml_or_raw (&dom, domain, false, &config_src);
   dds_entity_unpin_and_drop_ref (&dds_global.m_entity);
   return ret;
 }
@@ -308,13 +328,17 @@ dds_entity_t dds_create_domain_with_rawconfig (const dds_domainid_t domain, cons
 static dds_return_t dds_domain_free (dds_entity *vdomain)
 {
   struct dds_domain *domain = (struct dds_domain *) vdomain;
-  rtps_stop (&domain->gv);
+  ddsi_stop (&domain->gv);
   dds__builtin_fini (domain);
 
   if (domain->gv.config.liveliness_monitoring)
     ddsi_threadmon_unregister_domain (dds_global.threadmon, &domain->gv);
 
-  rtps_fini (&domain->gv);
+  ddsi_fini (&domain->gv);
+
+  (void) dds_pubsub_message_exchange_fini (domain);
+
+  dds_serdatapool_free (domain->serpool);
 
   /* tearing down the top-level object has more consequences, so it waits until signalled that all
      domains have been removed */
@@ -328,7 +352,7 @@ static dds_return_t dds_domain_free (dds_entity *vdomain)
   ddsrt_avl_delete (&dds_domaintree_def, &dds_global.m_domains, domain);
   dds_entity_final_deinit_before_free (vdomain);
   if (domain->cfgst)
-    config_fini (domain->cfgst);
+    ddsi_config_fini (domain->cfgst);
   dds_free (vdomain);
   ddsrt_cond_broadcast (&dds_global.m_cond);
   ddsrt_mutex_unlock (&dds_global.m_mutex);
@@ -417,80 +441,53 @@ void dds_write_set_batch (bool enable)
 
 #ifdef DDS_HAS_TYPE_DISCOVERY
 
-dds_return_t dds_domain_resolve_type (dds_entity_t entity, unsigned char *type_identifier, size_t type_identifier_sz, dds_duration_t timeout, struct ddsi_sertype **sertype)
+dds_return_t dds_get_typeobj (dds_entity_t entity, const dds_typeid_t *type_id, dds_duration_t timeout, dds_typeobj_t **type_obj)
 {
+  dds_return_t ret;
   struct dds_entity *e;
-  type_identifier_t type_id;
-  dds_return_t rc;
 
-  if (type_identifier == NULL || type_identifier_sz != sizeof (type_id) || sertype == NULL)
+  if (type_obj == NULL)
     return DDS_RETCODE_BAD_PARAMETER;
+  if ((ret = dds_entity_pin (entity, &e)) < 0)
+    return ret;
 
-  if ((rc = dds_entity_pin (entity, &e)) < 0)
-    return rc;
   if (e->m_domain == NULL)
-  {
-    rc = DDS_RETCODE_ILLEGAL_OPERATION;
-    goto failed;
-  }
-
-  struct ddsi_domaingv *gv = &e->m_domain->gv;
-  memcpy (&type_id.hash, type_identifier, sizeof (type_id));
-  ddsrt_mutex_lock (&gv->tl_admin_lock);
-  struct tl_meta *tlm = ddsi_tl_meta_lookup_locked (gv, &type_id);
-  if (tlm == NULL)
-  {
-    ddsrt_mutex_unlock (&gv->tl_admin_lock);
-    rc = DDS_RETCODE_PRECONDITION_NOT_MET;
-    goto failed;
-  }
-  if (tlm->state == TL_META_RESOLVED)
-  {
-    *sertype = ddsi_sertype_ref (tlm->sertype);
-    ddsrt_mutex_unlock (&gv->tl_admin_lock);
-  }
-  else if (timeout == 0)
-  {
-    ddsrt_mutex_unlock (&gv->tl_admin_lock);
-    rc = DDS_RETCODE_TIMEOUT;
-    goto failed;
-  }
+    ret = DDS_RETCODE_ILLEGAL_OPERATION;
   else
   {
-    ddsrt_mutex_unlock (&gv->tl_admin_lock);
-    if (!ddsi_tl_request_type (gv, &type_id))
+    struct ddsi_domaingv *gv = &e->m_domain->gv;
+    struct ddsi_type *type;
+    if ((ret = ddsi_wait_for_type_resolved (gv, (const ddsi_typeid_t *) type_id, timeout, &type, DDSI_TYPE_IGNORE_DEPS, DDSI_TYPE_SEND_REQUEST)) == DDS_RETCODE_OK)
     {
-      rc = DDS_RETCODE_PRECONDITION_NOT_MET;
-      goto failed;
-    }
-
-    const dds_time_t tnow = dds_time ();
-    const dds_time_t abstimeout = (DDS_INFINITY - timeout <= tnow) ? DDS_NEVER : (tnow + timeout);
-    *sertype = NULL;
-    ddsrt_mutex_lock (&gv->tl_admin_lock);
-    while (tlm->state != TL_META_RESOLVED)
-    {
-      if (!ddsrt_cond_waituntil (&gv->tl_resolved_cond, &gv->tl_admin_lock, abstimeout))
-        break;
-    }
-    if (tlm->state == TL_META_RESOLVED)
-    {
-      assert (tlm->sertype != NULL);
-      *sertype = ddsi_sertype_ref (tlm->sertype);
-    }
-    ddsrt_mutex_unlock (&gv->tl_admin_lock);
-    if (*sertype == NULL)
-    {
-      rc = DDS_RETCODE_TIMEOUT;
-      goto failed;
+      *type_obj = ddsi_type_get_typeobj (gv, type);
+      ddsi_type_unref (gv, type);
     }
   }
   dds_entity_unpin (e);
-  return DDS_RETCODE_OK;
-
-failed:
-  dds_entity_unpin (e);
-  assert (rc != DDS_RETCODE_OK);
-  return rc;
+  return ret;
 }
+
+dds_return_t dds_free_typeobj (dds_typeobj_t *type_obj)
+{
+  if (type_obj == NULL)
+    return DDS_RETCODE_BAD_PARAMETER;
+  ddsi_typeobj_fini (type_obj);
+  dds_free (type_obj);
+  return DDS_RETCODE_OK;
+}
+
+#else
+
+dds_return_t dds_get_typeobj (dds_entity_t entity, const dds_typeid_t *type_id, dds_duration_t timeout, dds_typeobj_t **type_obj)
+{
+  (void) entity; (void) type_id; (void) timeout; (void) type_obj;
+  return DDS_RETCODE_UNSUPPORTED;
+}
+
+dds_return_t dds_free_typeobj (dds_typeobj_t *type_obj)
+{
+  (void) type_obj;
+  return DDS_RETCODE_UNSUPPORTED;
+}
+
 #endif /* DDS_HAS_TYPE_DISCOVERY */

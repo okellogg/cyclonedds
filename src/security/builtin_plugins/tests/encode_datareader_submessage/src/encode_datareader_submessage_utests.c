@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2019 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <assert.h>
 
 #include "dds/ddsrt/bswap.h"
@@ -20,7 +19,7 @@
 #include "dds/security/dds_security_api.h"
 #include "dds/security/core/dds_security_serialize.h"
 #include "dds/security/core/dds_security_utils.h"
-#include "dds/security/core/shared_secret.h"
+#include "dds/security/core/dds_security_shared_secret.h"
 #include "dds/security/openssl_support.h"
 #include "CUnit/CUnit.h"
 #include "CUnit/Test.h"
@@ -291,7 +290,7 @@ static bool read_prefix(unsigned char **ptr, uint32_t *remain)
 
   prefix = (struct submsg_header *)(*ptr);
 
-  if (prefix->id != SMID_SEC_PREFIX)
+  if (prefix->id != DDSI_RTPS_SMID_SEC_PREFIX)
   {
     printf("check_encoded_data: prefix incorrect smid 0x%x02\n", prefix->id);
     return false;
@@ -360,7 +359,7 @@ static bool read_body(DDS_Security_OctetSeq *contents, bool encrypted, unsigned 
   {
     struct encrypted_data *enc;
 
-    if (body->id != SMID_SEC_BODY)
+    if (body->id != DDSI_RTPS_SMID_SEC_BODY)
     {
       printf("check_encoded_data: submessage SEC_BODY missing\n");
       return false;
@@ -373,7 +372,7 @@ static bool read_body(DDS_Security_OctetSeq *contents, bool encrypted, unsigned 
   }
   else
   {
-    if (body->id == SMID_SEC_BODY)
+    if (body->id == DDSI_RTPS_SMID_SEC_BODY)
     {
       printf("check_encoded_data: submessage SEC_BODY not expected\n");
       return false;
@@ -402,7 +401,7 @@ static bool read_postfix(unsigned char **ptr, uint32_t *remain)
 
   postfix = (struct submsg_header *)(*ptr);
 
-  if (postfix->id != SMID_SEC_POSTFIX)
+  if (postfix->id != DDSI_RTPS_SMID_SEC_POSTFIX)
   {
     printf("check_encoded_data: postfix invalid smid\n");
     return false;
@@ -562,6 +561,10 @@ static bool crypto_decrypt_data(uint32_t session_id, unsigned char *iv, DDS_Secu
       return false;
     }
   }
+  else
+  {
+    result = false;
+  }
 
   if (result)
   {
@@ -649,7 +652,7 @@ static void prepare_endpoint_security_attributes_and_properties(DDS_Security_End
   properties->_maximum = properties->_length = 1;
   properties->_buffer = ddsrt_malloc(sizeof(DDS_Security_Property_t));
 
-  properties->_buffer[0].name = ddsrt_strdup("dds.sec.crypto.keysize");
+  properties->_buffer[0].name = ddsrt_strdup(DDS_SEC_PROP_CRYPTO_KEYSIZE);
   if (transformation_kind == CRYPTO_TRANSFORMATION_KIND_AES128_GCM || transformation_kind == CRYPTO_TRANSFORMATION_KIND_AES128_GMAC)
   {
     properties->_buffer[0].value = ddsrt_strdup("128");
@@ -821,7 +824,6 @@ static void encode_datareader_submessage_not_signed(uint32_t transformation_kind
 
   reader_crypto = register_local_datareader(&datareader_security_attributes, &datareader_properties);
   CU_ASSERT_FATAL(reader_crypto != 0);
-  assert(reader_crypto != 0); // for Clang's static analyzer
 
   session_keys = get_datareader_session(reader_crypto);
 
@@ -847,7 +849,6 @@ static void encode_datareader_submessage_not_signed(uint32_t transformation_kind
   }
 
   CU_ASSERT_FATAL(result);
-  assert(result); // for Clang's static analyzer
   CU_ASSERT(exception.code == 0);
   CU_ASSERT(exception.message == NULL);
 
@@ -855,7 +856,6 @@ static void encode_datareader_submessage_not_signed(uint32_t transformation_kind
 
   result = check_encoded_data(&encoded_buffer, is_encrypted, &header, &footer, &data);
   CU_ASSERT_FATAL(result);
-  assert(result); // for Clang's static analyzer
 
   CU_ASSERT(header->transform_identifier.transformation_kind[3] == transformation_kind);
 
@@ -974,7 +974,6 @@ static void encode_datareader_submessage_sign(uint32_t transformation_kind)
 
   reader_crypto = register_local_datareader(&datareader_security_attributes, &datareader_properties);
   CU_ASSERT_FATAL(reader_crypto != 0);
-  assert(reader_crypto != 0); // for Clang's static analyzer
 
   session_keys = get_datareader_session(reader_crypto);
 
@@ -984,7 +983,6 @@ static void encode_datareader_submessage_sign(uint32_t transformation_kind)
   {
     writer_crypto = register_remote_datawriter(reader_crypto);
     CU_ASSERT_FATAL(writer_crypto != 0);
-    assert(writer_crypto != 0); // for Clang's static analyzer
     writer_list._buffer[i] = writer_crypto;
   }
 
@@ -1005,7 +1003,6 @@ static void encode_datareader_submessage_sign(uint32_t transformation_kind)
   }
 
   CU_ASSERT_FATAL(result);
-  assert(result); // for Clang's static analyzer
   CU_ASSERT(exception.code == 0);
   CU_ASSERT(exception.message == NULL);
 
@@ -1014,7 +1011,6 @@ static void encode_datareader_submessage_sign(uint32_t transformation_kind)
 
   result = check_encoded_data(&encoded_buffer, is_encrypted, &header, &footer, &data);
   CU_ASSERT_FATAL(result);
-  assert(result); // for Clang's static analyzer
 
   CU_ASSERT(header->transform_identifier.transformation_kind[3] == transformation_kind);
 

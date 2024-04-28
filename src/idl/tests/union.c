@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2020 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2020 to 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <assert.h>
 #include <stdint.h>
 #include <inttypes.h>
@@ -33,6 +32,21 @@ CU_Test(idl_union, no_case)
   CU_ASSERT_PTR_NOT_NULL_FATAL(pstate);
   ret = idl_parse_string(pstate, str);
   CU_ASSERT_EQUAL(ret, IDL_RETCODE_SYNTAX_ERROR);
+  idl_delete_pstate(pstate);
+}
+
+CU_Test(idl_union, name_clash)
+{
+  idl_retcode_t ret;
+  idl_pstate_t *pstate = NULL;
+
+  const char str[] = "union u switch (long) { case 1: char c; };\n"
+                     "union u switch (long) { case 1: char c; };";
+  ret = idl_create_pstate(0u, NULL, &pstate);
+  CU_ASSERT_EQUAL_FATAL(ret, IDL_RETCODE_OK);
+  CU_ASSERT_PTR_NOT_NULL_FATAL(pstate);
+  ret = idl_parse_string(pstate, str);
+  CU_ASSERT_EQUAL(ret, IDL_RETCODE_SEMANTIC_ERROR);
   idl_delete_pstate(pstate);
 }
 
@@ -178,6 +192,9 @@ CU_Test(idl_union, typedef_switch_types)
 
   ret = idl_create_pstate(0u, NULL, &pstate);
   CU_ASSERT_EQUAL_FATAL(ret, IDL_RETCODE_OK);
+  assert(ret == IDL_RETCODE_OK);
+  // Coverity thinks pstate is possibly a freed pointer
+  // coverity[use_after_free:FALSE]
   CU_ASSERT_PTR_NOT_NULL(pstate);
   assert(pstate);
   str = M("foo", T("char", "baz") U("baz"));
@@ -450,6 +467,7 @@ CU_Test(idl_union, default_discriminator_unsigned_int)
       CU_ASSERT(u->default_case && u->default_case->const_expr);
       CU_ASSERT_PTR_EQUAL(idl_parent(u->default_case), u);
     }
+    CU_ASSERT_FATAL(u->default_case->const_expr);
     CU_ASSERT_FATAL(idl_is_literal(u->default_case->const_expr));
     l = u->default_case->const_expr;
     CU_ASSERT_FATAL(idl_type(l) == IDL_UINT8);
@@ -558,5 +576,22 @@ CU_Test(idl_union, default_discriminator_enum)
   ret = parse_string(idl, &pstate);
   CU_ASSERT_EQUAL(ret, IDL_RETCODE_SEMANTIC_ERROR);
   CU_ASSERT_PTR_NULL(pstate);
+  idl_delete_pstate(pstate);
+}
+
+CU_Test(idl_union, two_unions_one_enum)
+{
+  idl_retcode_t ret;
+  idl_pstate_t *pstate = NULL;
+
+  const char str[] = "enum aap { noot, mies };\n"
+                     "union wim switch (aap) { case mies: double zus; };\n"
+                     "union jet switch (aap) { case noot: double zus; };";
+
+  ret = idl_create_pstate(0u, NULL, &pstate);
+  CU_ASSERT_EQUAL_FATAL(ret, IDL_RETCODE_OK);
+  CU_ASSERT_PTR_NOT_NULL_FATAL(pstate);
+  ret = idl_parse_string(pstate, str);
+  CU_ASSERT_EQUAL(ret, IDL_RETCODE_OK);
   idl_delete_pstate(pstate);
 }

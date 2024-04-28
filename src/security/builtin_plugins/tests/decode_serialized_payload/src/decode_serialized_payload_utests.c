@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2019 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <assert.h>
 
 #include "dds/ddsrt/bswap.h"
@@ -19,12 +18,13 @@
 #include "dds/security/dds_security_api.h"
 #include "dds/security/core/dds_security_serialize.h"
 #include "dds/security/core/dds_security_utils.h"
-#include "dds/security/core/shared_secret.h"
+#include "dds/security/core/dds_security_shared_secret.h"
 #include "dds/security/openssl_support.h"
 #include "CUnit/CUnit.h"
 #include "CUnit/Test.h"
 #include "common/src/loader.h"
 #include "crypto_objects.h"
+#include "crypto_utils.h"
 
 #define TEST_SHARED_SECRET_SIZE 32
 
@@ -783,7 +783,6 @@ CU_Test(ddssec_builtin_decode_serialized_payload, invalid_data, .init = suite_de
   }
 
   CU_ASSERT_FATAL(result);
-  assert(result); // for Clang's static analyzer
   CU_ASSERT(exception.code == 0);
   CU_ASSERT(exception.message == NULL);
 
@@ -823,7 +822,7 @@ CU_Test(ddssec_builtin_decode_serialized_payload, invalid_data, .init = suite_de
   /* use incorrect transformation key id */
   {
     unsigned char key[4];
-    uint32_t val = (uint32_t) rand();
+    uint32_t val = crypto_get_random_uint32();
 
     memcpy(key, header->transform_identifier.transformation_key_id, 4);
     memcpy(header->transform_identifier.transformation_key_id, &val, 4);
@@ -854,7 +853,7 @@ CU_Test(ddssec_builtin_decode_serialized_payload, invalid_data, .init = suite_de
   /* use incorrect session id*/
   {
     unsigned char sid[4];
-    uint32_t val = (uint32_t) rand();
+    uint32_t val = crypto_get_random_uint32();
 
     memcpy(sid, header->session_id, 4);
     memcpy(header->session_id, &val, 4);
@@ -891,8 +890,8 @@ CU_Test(ddssec_builtin_decode_serialized_payload, invalid_data, .init = suite_de
       uint32_t l;
     } val;
 
-    val.h = (uint32_t) rand();
-    val.l = (uint32_t) rand();
+    val.h = crypto_get_random_uint32();
+    val.l = crypto_get_random_uint32();
 
     memcpy(iv, header->init_vector_suffix, 8);
     memcpy(header->init_vector_suffix, &val, 8);

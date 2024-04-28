@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2022 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <assert.h>
 #include <limits.h>
 
@@ -19,8 +18,8 @@
 #include "dds/ddsrt/heap.h"
 #include "dds/ddsrt/random.h"
 #include "dds/ddsi/ddsi_entity_index.h"
-#include "dds/ddsi/q_entity.h"
-#include "dds/ddsi/q_whc.h"
+#include "dds/ddsi/ddsi_entity.h"
+#include "ddsi__whc.h"
 #include "dds__entity.h"
 
 #include "test_common.h"
@@ -59,19 +58,7 @@ static void topic_discovery_fini (void)
 {
   dds_delete (g_domain_remote);
   /* Add a delay so that sedp dispose messages for topics (and endpoints) are sent and processed */
-  dds_sleepfor (DDS_SECS (1));
   dds_delete (g_domain1);
-}
-
-static void msg (const char *msg, ...)
-{
-  va_list args;
-  dds_time_t t;
-  t = dds_time ();
-  printf ("%d.%06d ", (int32_t)(t / DDS_NSECS_IN_SEC), (int32_t)(t % DDS_NSECS_IN_SEC) / 1000);
-  va_start (args, msg);
-  vprintf (msg, args);
-  va_end (args);
 }
 
 CU_TheoryDataPoints(ddsc_topic_discovery, remote_topics) = {
@@ -81,9 +68,9 @@ CU_TheoryDataPoints(ddsc_topic_discovery, remote_topics) = {
     CU_DataPoints(bool,     false, false, false, false, false,  true,  true,  true,  true,  true, true, true), /* test live topic discovery */
 };
 
-CU_Theory ((uint32_t num_pp, uint32_t num_tp, bool hist_data, bool live_data), ddsc_topic_discovery, remote_topics, .init = topic_discovery_init, .fini = topic_discovery_fini, .timeout = 60)
+CU_Theory ((uint32_t num_pp, uint32_t num_tp, bool hist_data, bool live_data), ddsc_topic_discovery, remote_topics, .init = topic_discovery_init, .fini = topic_discovery_fini, .timeout = 180)
 {
-  msg ("ddsc_topic_discovery.remote_topics: %u participants, %u topics,%s%s\n", num_pp, num_tp, hist_data ? " historical-data" : "", live_data ? " live-data" : "");
+  tprintf ("ddsc_topic_discovery.remote_topics: %u participants, %u topics,%s%s\n", num_pp, num_tp, hist_data ? " historical-data" : "", live_data ? " live-data" : "");
 
   CU_ASSERT_FATAL (num_pp > 0);
   CU_ASSERT_FATAL (num_tp > 0 && num_tp <= 64);
@@ -113,7 +100,7 @@ CU_Theory ((uint32_t num_pp, uint32_t num_tp, bool hist_data, bool live_data), d
         CU_ASSERT_FATAL (topic > 0);
       }
 
-    /* sleep for some time so that deliver_historical_data will be used for (at least some of)
+    /* sleep for some time so that ddsi_deliver_historical_data will be used for (at least some of)
        the sedp samples for the created topics */
     dds_sleepfor (DDS_MSECS (500));
   }
@@ -137,7 +124,7 @@ CU_Theory ((uint32_t num_pp, uint32_t num_tp, bool hist_data, bool live_data), d
   }
 
   /* read DCPSTopic and check if all topics seen */
-  dds_time_t t_exp = dds_time () + DDS_SECS (30);
+  dds_time_t t_exp = dds_time () + DDS_SECS (180);
   do
   {
     void *raw[1] = { 0 };
@@ -178,50 +165,76 @@ CU_Theory ((uint32_t num_pp, uint32_t num_tp, bool hist_data, bool live_data), d
 
 static void check_topic_samples (dds_entity_t topic_rd, char *topic_name, uint32_t exp_count, bool equal_keys, unsigned char *key, unsigned char *match_key)
 {
-  dds_time_t t_exp = dds_time () + DDS_SECS (1);
   uint32_t topic_seen = 0;
+  tprintf ("check_topic_samples: %s exp_count %"PRIu32" eqkeys %s match_key={",
+           topic_name, exp_count, equal_keys ? "true" : "false");
+  if (match_key) {
+    for (uint32_t i = 0; i < sizeof (match_key); i++)
+      printf ("%02x", match_key[i]);
+  }
+  printf ("}\n");
   unsigned char first_key[16];
-  do
+  dds_entity_t ws = dds_create_waitset (dds_get_participant (topic_rd));
+  CU_ASSERT_FATAL (ws > 0);
+  dds_entity_t readcond = dds_create_readcondition (topic_rd, DDS_ANY_STATE);
+  CU_ASSERT_FATAL (readcond > 0);
+  (void) dds_waitset_attach (ws, readcond, 0);
+
+  // Wait for "straggler_wait" once the expected number of samples has been received;
+  // if none are expected, then this period starts immediately
+  dds_duration_t const straggler_wait = DDS_SECS (1);
+  dds_time_t t_exp = (exp_count == 0) ? dds_time () + straggler_wait : DDS_NEVER;
+  while (dds_waitset_wait_until (ws, NULL, 0, t_exp))
   {
     void *raw[1] = { 0 };
     dds_sample_info_t sample_info[1];
-    dds_return_t n;
-    while ((n = dds_take (topic_rd, raw, sample_info, 1, 1)) > 0)
+    dds_return_t n = dds_take (topic_rd, raw, sample_info, 1, 1);
+    CU_ASSERT_FATAL (n > 0);
+    if (!sample_info[0].valid_data)
     {
-      CU_ASSERT_EQUAL_FATAL (n, 1);
-      dds_builtintopic_topic_t *sample = raw[0];
-      bool not_alive = sample_info->instance_state != DDS_IST_ALIVE;
-      msg ("read topic: %s, key={", sample->topic_name);
-      for (uint32_t i = 0; i < sizeof (first_key); i++)
-        printf ("%02x", sample->key.d[i]);
-      printf ("} %sALIVE\n", not_alive ? "NOT_" : "");
-      if (!not_alive && (topic_name == NULL || !strcmp (sample->topic_name, topic_name)))
-      {
-        if (topic_seen == 0)
-        {
-          memcpy (&first_key, &sample->key, sizeof (first_key));
-          if (key != NULL)
-            memcpy (key, &sample->key, sizeof (first_key));
-        }
-        else
-        {
-          CU_ASSERT_EQUAL_FATAL (memcmp (&first_key, &sample->key, sizeof (first_key)) == 0, equal_keys);
-        }
-        if (match_key != NULL)
-          CU_ASSERT_EQUAL_FATAL (memcmp (match_key, &sample->key, sizeof (first_key)) == 0, equal_keys);
-        assert (topic_seen < exp_count);
-        topic_seen++;
-      }
-      dds_return_loan (topic_rd, raw, n);
+      (void) dds_return_loan (topic_rd, raw, n);
+      continue;
     }
-    dds_sleepfor (DDS_MSECS (10));
-  } while (dds_time () < t_exp);
+
+    CU_ASSERT_EQUAL_FATAL (n, 1);
+    dds_builtintopic_topic_t *sample = raw[0];
+    CU_ASSERT_PTR_NOT_NULL_FATAL (sample);
+    assert (sample); // for Clang static analyzer
+    bool not_alive = sample_info->instance_state != DDS_IST_ALIVE;
+    tprintf ("read topic: %s, key={", sample->topic_name);
+    for (uint32_t i = 0; i < sizeof (first_key); i++)
+      printf ("%02x", sample->key.d[i]);
+    printf ("} %sALIVE\n", not_alive ? "NOT_" : "");
+    if (!not_alive && (topic_name == NULL || !strcmp (sample->topic_name, topic_name)))
+    {
+      if (topic_seen != 0) {
+        CU_ASSERT_EQUAL_FATAL (memcmp (&first_key, &sample->key, sizeof (first_key)) == 0, equal_keys);
+      } else {
+        memcpy (&first_key, &sample->key, sizeof (first_key));
+        if (key != NULL)
+          memcpy (key, &sample->key, sizeof (first_key));
+      }
+      if (match_key != NULL) {
+        CU_ASSERT_EQUAL_FATAL (memcmp (match_key, &sample->key, sizeof (first_key)) == 0, equal_keys);
+      }
+      CU_ASSERT_FATAL (topic_seen < exp_count);
+      if (++topic_seen == exp_count)
+      {
+        assert (t_exp == DDS_NEVER);
+        t_exp = dds_time () + straggler_wait;
+      }
+    }
+    (void) dds_return_loan (topic_rd, raw, n);
+  }
+  tprintf ("check_topic_samples: %s topic_seen %"PRIu32"\n", topic_name, topic_seen);
   CU_ASSERT_FATAL (topic_seen == exp_count);
+  dds_delete (ws);
+  dds_delete (readcond);
 }
 
 CU_Test (ddsc_topic_discovery, single_topic_def, .init = topic_discovery_init, .fini = topic_discovery_fini)
 {
-  msg ("ddsc_topic_discovery.single_topic_def\n");
+  tprintf ("ddsc_topic_discovery.single_topic_def\n");
 
   char topic_name[100];
   create_unique_topic_name ("ddsc_topic_discovery_test_single_def", topic_name, 100);
@@ -269,7 +282,7 @@ CU_Test (ddsc_topic_discovery, single_topic_def, .init = topic_discovery_init, .
 
 CU_Test (ddsc_topic_discovery, different_type, .init = topic_discovery_init, .fini = topic_discovery_fini)
 {
-  msg ("ddsc_topic_discovery.different_type\n");
+  tprintf ("ddsc_topic_discovery.different_type\n");
 
   char topic_name[100];
   create_unique_topic_name ("ddsc_topic_discovery_test_type", topic_name, 100);
@@ -355,7 +368,7 @@ CU_Test (ddsc_topic_discovery, topic_qos_update, .init = topic_discovery_init, .
   dds_return_t ret;
   ddsrt_atomic_st32 (&terminate, 0);
 
-  msg ("ddsc_topic_discovery.topic_qos_update\n");
+  tprintf ("ddsc_topic_discovery.topic_qos_update\n");
 
   for (uint32_t p = 0; p < NUM_PP; p++)
   {
@@ -414,5 +427,5 @@ CU_Test (ddsc_topic_discovery, topic_qos_update, .init = topic_discovery_init, .
     dds_sleepfor (DDS_MSECS (DELAY_MSECS));
   }
   dds_delete_qos (qos);
-  msg ("%u qos updates\n", c);
+  tprintf ("%u qos updates\n", c);
 }

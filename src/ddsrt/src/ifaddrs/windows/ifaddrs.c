@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2022 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <assert.h>
 #include <errno.h>
 
@@ -129,7 +128,7 @@ getflags(const PIP_ADAPTER_ADDRESSES iface)
     /* multicast over loopback doesn't seem to work despite the NO_MULTICAST
        flag being clear assuming an interface is multicast-capable when in fact
        it isn't is disastrous, so it makes more sense to err by assuming it
-       won't work as there is always the AssumeMulticastCapable setting to
+       won't work as there is always the General/Interfaces/NetworkInterface[@multicast] setting to
        overrule it */
     flags |= IFF_MULTICAST;
   }
@@ -175,9 +174,9 @@ copyname(const wchar_t *wstr, char **strp)
 
   len = WideCharToMultiByte(
     CP_UTF8, WC_ERR_INVALID_CHARS, wstr, -1, buf, 0, NULL, NULL);
-  if (len == 0) {
+  if (len <= 0) {
     return DDS_RETCODE_BAD_PARAMETER;
-  } else if ((str = ddsrt_malloc_s(len)) == NULL) {
+  } else if ((str = ddsrt_malloc_s((size_t)len)) == NULL) {
     return DDS_RETCODE_OUT_OF_RESOURCES;
   }
 
@@ -322,4 +321,33 @@ ddsrt_getifaddrs(
   }
 
   return rc;
+}
+
+dds_return_t ddsrt_eth_get_mac_addr (char *interface_name, unsigned char *mac_addr)
+{
+  // Follow example from:
+  // https://learn.microsoft.com/en-us/windows/win32/api/iphlpapi/nf-iphlpapi-getadaptersaddresses?redirectedfrom=MSDN
+  int ret = DDS_RETCODE_ERROR;
+  
+  PIP_ADAPTER_ADDRESSES interfaces = NULL, current_interface = NULL;
+  if ((ret = getifaces(&interfaces)) != DDS_RETCODE_OK)
+  {
+    return ret;  
+  }
+
+  current_interface = interfaces;
+  while (current_interface)
+  {
+    char converted_name[256];
+    sprintf_s(converted_name, 256, "%ws", current_interface->FriendlyName);
+    if (strcmp (converted_name, interface_name) == 0)
+    {
+      memcpy (mac_addr, current_interface->PhysicalAddress, 6);
+      ret = DDS_RETCODE_OK;
+      break;
+    }
+    current_interface = current_interface->Next;
+  }
+  ddsrt_free(interfaces);
+  return ret;
 }

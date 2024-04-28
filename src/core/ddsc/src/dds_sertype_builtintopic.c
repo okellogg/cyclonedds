@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2022 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <stddef.h>
 #include <ctype.h>
 #include <assert.h>
@@ -17,14 +16,10 @@
 #include "dds/dds.h"
 #include "dds/ddsrt/heap.h"
 #include "dds/ddsrt/md5.h"
-#include "dds/ddsi/q_config.h"
-#include "dds/ddsi/q_freelist.h"
+#include "dds/ddsi/ddsi_freelist.h"
 #include "dds/ddsi/ddsi_sertype.h"
 #include "dds/ddsi/ddsi_iid.h"
-#include "dds/ddsi/ddsi_typelookup.h"
 #include "dds__serdata_builtintopic.h"
-
-/* FIXME: sertopic /= ddstopic so a lot of stuff needs to be moved here from dds_topic.c and the free function needs to be implemented properly */
 
 static struct ddsi_sertype *new_sertype_builtintopic_impl (
     enum ddsi_sertype_builtintopic_entity_kind entity_kind,
@@ -37,7 +32,7 @@ static struct ddsi_sertype *new_sertype_builtintopic_impl (
   return &tp->c;
 }
 
-struct ddsi_sertype *new_sertype_builtintopic (enum ddsi_sertype_builtintopic_entity_kind entity_kind, const char *typename)
+struct ddsi_sertype *dds_new_sertype_builtintopic (enum ddsi_sertype_builtintopic_entity_kind entity_kind, const char *typename)
 {
   return new_sertype_builtintopic_impl (entity_kind, typename, &ddsi_serdata_ops_builtintopic);
 }
@@ -61,16 +56,6 @@ static uint32_t sertype_builtin_hash (const struct ddsi_sertype *tpcmn)
   return (uint32_t) tp->entity_kind;
 }
 
-static bool sertype_builtin_typeid_hash (const struct ddsi_sertype *tpcmn, unsigned char *seq)
-{
-  const struct ddsi_sertype_builtintopic *tp = (struct ddsi_sertype_builtintopic *) tpcmn;
-  ddsrt_md5_state_t md5st;
-  ddsrt_md5_init (&md5st);
-  ddsrt_md5_append (&md5st, (ddsrt_md5_byte_t *) &tp->entity_kind, sizeof (tp->entity_kind));
-  ddsrt_md5_finish (&md5st, (ddsrt_md5_byte_t *) seq);
-  return true;
-}
-
 static void free_pp (void *vsample)
 {
   dds_builtintopic_participant_t *sample = vsample;
@@ -80,7 +65,7 @@ static void free_pp (void *vsample)
 
 #ifdef DDS_HAS_TOPIC_DISCOVERY
 
-struct ddsi_sertype *new_sertype_builtintopic_topic (enum ddsi_sertype_builtintopic_entity_kind entity_kind, const char *typename)
+struct ddsi_sertype *dds_new_sertype_builtintopic_topic (enum ddsi_sertype_builtintopic_entity_kind entity_kind, const char *typename)
 {
   return new_sertype_builtintopic_impl (entity_kind, typename, &ddsi_serdata_ops_builtintopic_topic);
 }
@@ -160,7 +145,7 @@ static void sertype_builtin_free_samples (const struct ddsi_sertype *sertype_com
 #endif
     if (op & DDS_FREE_CONTENTS_BIT)
     {
-      void (*f) (void *) = 0;
+      void (*f) (void *a) = NULL;
       char *ptr = ptrs[0];
       switch (tp->entity_kind)
       {
@@ -196,13 +181,13 @@ const struct ddsi_sertype_ops ddsi_sertype_ops_builtintopic = {
   .arg = 0,
   .equal = sertype_builtin_equal,
   .hash = sertype_builtin_hash,
-  .typeid_hash = sertype_builtin_typeid_hash,
   .free = sertype_builtin_free,
   .zero_samples = sertype_builtin_zero_samples,
   .realloc_samples = sertype_builtin_realloc_samples,
   .free_samples = sertype_builtin_free_samples,
-  .serialized_size = 0,
-  .serialize = 0,
-  .deserialize = 0,
-  .assignable_from = 0
+  .type_id = NULL,
+  .type_map = NULL,
+  .type_info = NULL,
+  .get_serialized_size = NULL,
+  .serialize_into =NULL 
 };

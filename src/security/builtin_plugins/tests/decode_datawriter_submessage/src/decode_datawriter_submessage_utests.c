@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2019 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <assert.h>
 
 #include "dds/ddsrt/bswap.h"
@@ -21,7 +20,7 @@
 #include "dds/security/dds_security_api.h"
 #include "dds/security/core/dds_security_serialize.h"
 #include "dds/security/core/dds_security_utils.h"
-#include "dds/security/core/shared_secret.h"
+#include "dds/security/core/dds_security_shared_secret.h"
 #include "dds/security/openssl_support.h"
 #include "CUnit/CUnit.h"
 #include "CUnit/Test.h"
@@ -155,7 +154,7 @@ static void prepare_endpoint_security_attributes_and_properties(DDS_Security_End
     properties->_maximum = properties->_length = 1;
     properties->_buffer = ddsrt_malloc(sizeof(DDS_Security_Property_t));
 
-    properties->_buffer[0].name = ddsrt_strdup("dds.sec.crypto.keysize");
+    properties->_buffer[0].name = ddsrt_strdup(DDS_SEC_PROP_CRYPTO_KEYSIZE);
 
     if (transformation_kind == CRYPTO_TRANSFORMATION_KIND_AES128_GCM || transformation_kind == CRYPTO_TRANSFORMATION_KIND_AES128_GMAC)
     {
@@ -426,9 +425,9 @@ static void suite_decode_datawriter_submessage_fini(void)
 static unsigned char submsg_header_endianness_flag (enum ddsrt_byte_order_selector bo)
 {
 #if DDSRT_ENDIAN == DDSRT_LITTLE_ENDIAN
-  return (unsigned char) ((bo == DDSRT_BOSEL_BE) ? 0 : SMFLAG_ENDIANNESS);
+  return (unsigned char) ((bo == DDSRT_BOSEL_BE) ? 0 : DDSI_RTPS_SUBMESSAGE_FLAG_ENDIANNESS);
 #else
-  return (unsigned char) ((bo == DDSRT_BO_LE) ? SMFLAG_ENDIANNESS : 0);
+  return (unsigned char) ((bo == DDSRT_BO_LE) ? DDSI_RTPS_SUBMESSAGE_FLAG_ENDIANNESS : 0);
 #endif
 }
 
@@ -1595,13 +1594,13 @@ CU_Test(ddssec_builtin_decode_datawriter_submessage, volatile_sec, .init = suite
 
   datareader_properties._length = datareader_properties._maximum = 1;
   datareader_properties._buffer = DDS_Security_PropertySeq_allocbuf(1);
-  datareader_properties._buffer[0].name = ddsrt_strdup("dds.sec.builtin_endpoint_name");
+  datareader_properties._buffer[0].name = ddsrt_strdup(DDS_SEC_PROP_BUILTIN_ENDPOINT_NAME);
   datareader_properties._buffer[0].value = ddsrt_strdup("BuiltinParticipantVolatileMessageSecureReader");
   datareader_properties._buffer[0].propagate = false;
 
   datawriter_properties._length = datawriter_properties._maximum = 1;
   datawriter_properties._buffer = DDS_Security_PropertySeq_allocbuf(1);
-  datawriter_properties._buffer[0].name = ddsrt_strdup("dds.sec.builtin_endpoint_name");
+  datawriter_properties._buffer[0].name = ddsrt_strdup(DDS_SEC_PROP_BUILTIN_ENDPOINT_NAME);
   datawriter_properties._buffer[0].value = ddsrt_strdup("BuiltinParticipantVolatileMessageSecureWriter");
   datawriter_properties._buffer[0].propagate = false;
 

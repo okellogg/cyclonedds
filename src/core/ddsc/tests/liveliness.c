@@ -1,24 +1,16 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2022 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <assert.h>
 #include <limits.h>
 
-#include "dds/dds.h"
-#include "config_env.h"
-
-#include "dds/version.h"
-#include "dds__entity.h"
-#include "dds/ddsi/q_entity.h"
-#include "dds/ddsi/ddsi_entity_index.h"
 #include "dds/ddsrt/cdtors.h"
 #include "dds/ddsrt/misc.h"
 #include "dds/ddsrt/process.h"
@@ -26,7 +18,13 @@
 #include "dds/ddsrt/environ.h"
 #include "dds/ddsrt/atomics.h"
 #include "dds/ddsrt/time.h"
-
+#include "dds/ddsi/ddsi_entity.h"
+#include "dds/ddsi/ddsi_entity_index.h"
+#include "ddsi__participant.h"
+#include "dds/dds.h"
+#include "dds/version.h"
+#include "dds__entity.h"
+#include "config_env.h"
 #include "test_common.h"
 
 #define DDS_DOMAINID_PUB 0
@@ -76,20 +74,19 @@ static void liveliness_fini(void)
  * can be used to count the number of PMD messages that is sent by
  * the participant.
  */
-static seqno_t get_pmd_seqno(dds_entity_t participant)
+static ddsi_seqno_t get_pmd_seqno(dds_entity_t participant)
 {
-  seqno_t seqno;
+  ddsi_seqno_t seqno;
   struct dds_entity *pp_entity;
-  struct participant *pp;
-  struct writer *wr;
+  struct ddsi_participant *pp;
+  struct ddsi_writer *wr;
   CU_ASSERT_EQUAL_FATAL(dds_entity_pin(participant, &pp_entity), 0);
-  thread_state_awake(lookup_thread_state(), &pp_entity->m_domain->gv);
-  pp = entidx_lookup_participant_guid(pp_entity->m_domain->gv.entity_index, &pp_entity->m_guid);
-  wr = get_builtin_writer(pp, NN_ENTITYID_P2P_BUILTIN_PARTICIPANT_MESSAGE_WRITER);
+  ddsi_thread_state_awake(ddsi_lookup_thread_state(), &pp_entity->m_domain->gv);
+  pp = ddsi_entidx_lookup_participant_guid(pp_entity->m_domain->gv.entity_index, &pp_entity->m_guid);
+  wr = ddsi_get_builtin_writer (pp, DDSI_ENTITYID_P2P_BUILTIN_PARTICIPANT_MESSAGE_WRITER);
   CU_ASSERT_FATAL(wr != NULL);
-  assert(wr != NULL); /* for Clang's static analyzer */
   seqno = wr->seq;
-  thread_state_asleep(lookup_thread_state());
+  ddsi_thread_state_asleep(ddsi_lookup_thread_state());
   dds_entity_unpin(pp_entity);
   return seqno;
 }
@@ -101,12 +98,12 @@ static dds_duration_t get_pmd_interval(dds_entity_t participant)
 {
   dds_duration_t intv;
   struct dds_entity *pp_entity;
-  struct participant *pp;
+  struct ddsi_participant *pp;
   CU_ASSERT_EQUAL_FATAL(dds_entity_pin(participant, &pp_entity), 0);
-  thread_state_awake(lookup_thread_state(), &pp_entity->m_domain->gv);
-  pp = entidx_lookup_participant_guid(pp_entity->m_domain->gv.entity_index, &pp_entity->m_guid);
-  intv = pp_get_pmd_interval(pp);
-  thread_state_asleep(lookup_thread_state());
+  ddsi_thread_state_awake(ddsi_lookup_thread_state(), &pp_entity->m_domain->gv);
+  pp = ddsi_entidx_lookup_participant_guid(pp_entity->m_domain->gv.entity_index, &pp_entity->m_guid);
+  intv = ddsi_participant_get_pmd_interval(pp);
+  ddsi_thread_state_asleep(ddsi_lookup_thread_state());
   dds_entity_unpin(pp_entity);
   return intv;
 }
@@ -146,19 +143,16 @@ static void test_pmd_count(dds_liveliness_kind_t kind, uint32_t ldur, double mul
   dds_entity_t sub_topic = 0;
   dds_entity_t reader;
   dds_entity_t writer;
-  seqno_t start_seqno, end_seqno;
+  ddsi_seqno_t start_seqno, end_seqno;
   dds_qos_t *rqos;
   dds_qos_t *wqos;
   dds_entity_t waitset;
   dds_attach_t triggered;
   uint32_t status;
   char name[100];
-  dds_time_t t;
 
-  t = dds_time();
-  printf("%d.%06d running test: kind %s, lease duration %"PRIu32", delay %d, %s reader\n",
-         (int32_t)(t / DDS_NSECS_IN_SEC), (int32_t)(t % DDS_NSECS_IN_SEC) / 1000,
-         kind == 0 ? "A" : "MP", ldur, (int32_t)(mult * ldur), remote_reader ? "remote" : "local");
+  tprintf("running test: kind %s, lease duration %"PRIu32", delay %d, %s reader\n",
+          kind == 0 ? "A" : "MP", ldur, (int32_t)(mult * ldur), remote_reader ? "remote" : "local");
 
   /* wait for initial PMD to be sent by the participant */
   while (get_pmd_seqno(g_pub_participant) < 1)
@@ -196,17 +190,14 @@ static void test_pmd_count(dds_liveliness_kind_t kind, uint32_t ldur, double mul
   dds_sleepfor(DDS_MSECS((dds_duration_t)(mult * ldur)));
   end_seqno = get_pmd_seqno(g_pub_participant);
 
-  t = dds_time();
-  printf("%d.%06d PMD sequence no: start %" PRId64 " -> end %" PRId64 "\n",
-         (int32_t)(t / DDS_NSECS_IN_SEC), (int32_t)(t % DDS_NSECS_IN_SEC) / 1000,
-         start_seqno, end_seqno);
+  tprintf("PMD sequence no: start %" PRIu64 " -> end %" PRIu64 "\n", start_seqno, end_seqno);
 
   /* End-start should be mult - 1 under ideal circumstances, but consider the test successful
            when at least 50% of the expected PMD's was sent. This checks that the frequency for sending
            PMDs was increased when the writer was added. */
-  CU_ASSERT_FATAL((double) (end_seqno - start_seqno) >= (kind == DDS_LIVELINESS_AUTOMATIC ? (50 * (mult - 1)) / 100 : 0))
+  CU_ASSERT_FATAL((double) (end_seqno - start_seqno) >= (kind == DDS_LIVELINESS_AUTOMATIC ? (50 * (mult - 1)) / 100 : 0));
   if (kind != DDS_LIVELINESS_AUTOMATIC)
-    CU_ASSERT_FATAL((double) (get_pmd_seqno(g_pub_participant) - start_seqno) < mult)
+    CU_ASSERT_FATAL((double) (get_pmd_seqno(g_pub_participant) - start_seqno) < mult);
 
   /* cleanup */
   if (remote_reader)
@@ -253,9 +244,8 @@ static void test_expire_liveliness_kinds(uint32_t ldur, double mult, uint32_t wr
   do
   {
     tstart = dds_time();
-    printf("%d.%06d running test: lease duration %"PRIu32", delay %f, auto/man-by-part/man-by-topic %"PRIu32"/%"PRIu32"/%"PRIu32"\n, %s reader\n",
-           (int32_t)(tstart / DDS_NSECS_IN_SEC), (int32_t)(tstart % DDS_NSECS_IN_SEC) / 1000,
-           ldur, mult, wr_cnt_auto, wr_cnt_man_pp, wr_cnt_man_tp, remote_reader ? "remote" : "local");
+    tprintf("running test: lease duration %"PRIu32", delay %f, auto/man-by-part/man-by-topic %"PRIu32"/%"PRIu32"/%"PRIu32", %s reader\n",
+            ldur, mult, wr_cnt_auto, wr_cnt_man_pp, wr_cnt_man_tp, remote_reader ? "remote" : "local");
 
     /* topics */
     create_unique_topic_name("ddsc_liveliness_expire_kinds", name, sizeof name);
@@ -298,14 +288,13 @@ static void test_expire_liveliness_kinds(uint32_t ldur, double mult, uint32_t wr
     if (t - tstart > DDS_MSECS(ldur) / 2)
     {
       ldur *= 10 / (run + 1);
-      printf("%d.%06d failed to create writers in time\n",
-             (int32_t)(t / DDS_NSECS_IN_SEC), (int32_t)(t % DDS_NSECS_IN_SEC) / 1000);
+      tprintf("failed to create writers in time\n");
     }
     else
     {
       /* check alive count before proxy writers are expired */
       dds_get_liveliness_changed_status(reader, &lstatus);
-      printf("%d.%06d writers alive: %"PRIu32"\n", (int32_t)(t / DDS_NSECS_IN_SEC), (int32_t)(t % DDS_NSECS_IN_SEC) / 1000, lstatus.alive_count);
+      tprintf("writers alive: %"PRIu32"\n", lstatus.alive_count);
       CU_ASSERT_EQUAL_FATAL(lstatus.alive_count, wr_cnt);
 
       dds_time_t tstop = tstart + DDS_MSECS((dds_duration_t)(mult * ldur));
@@ -317,24 +306,20 @@ static void test_expire_liveliness_kinds(uint32_t ldur, double mult, uint32_t wr
         CU_ASSERT_EQUAL_FATAL(dds_get_liveliness_changed_status(reader, &lstatus), DDS_RETCODE_OK);
         stopped += (uint32_t)lstatus.not_alive_count_change;
       } while (dds_time() < tstop);
-      t = dds_time();
-      printf("%d.%06d writers stopped: %u\n",
-             (int32_t)(t / DDS_NSECS_IN_SEC), (int32_t)(t % DDS_NSECS_IN_SEC) / 1000, stopped);
+      tprintf("writers stopped: %u\n", stopped);
 
       size_t exp_stopped = mult < 1 ? 0 : (wr_cnt_man_pp + wr_cnt_man_tp);
       size_t exp_alive = mult < 1 ? wr_cnt : wr_cnt_auto;
       CU_ASSERT_EQUAL_FATAL(dds_get_liveliness_changed_status(reader, &lstatus), DDS_RETCODE_OK);
-      printf("%d.%06d writers alive: %u (exp: %u) not-alive: %u (exp %u)\n",
-             (int32_t)(t / DDS_NSECS_IN_SEC), (int32_t)(t % DDS_NSECS_IN_SEC) / 1000,
-             lstatus.alive_count, (unsigned) exp_alive,
-             lstatus.not_alive_count, (unsigned) exp_stopped);
+      tprintf("writers alive: %u (exp: %u) not-alive: %u (exp %u)\n",
+              lstatus.alive_count, (unsigned) exp_alive,
+              lstatus.not_alive_count, (unsigned) exp_stopped);
       if (stopped == exp_stopped && lstatus.alive_count == exp_alive)
         test_finished = true;
       else
       {
         ldur *= 10 / (run + 1);
-        printf("%d.%06d incorrect number of stopped/alive writers\n",
-               (int32_t)(t / DDS_NSECS_IN_SEC), (int32_t)(t % DDS_NSECS_IN_SEC) / 1000);
+        tprintf("incorrect number of stopped/alive writers\n");
       }
     }
 
@@ -354,15 +339,14 @@ static void test_expire_liveliness_kinds(uint32_t ldur, double mult, uint32_t wr
     {
       if (++run > 3)
       {
-        printf("%d.%06d run limit reached, test failed\n", (int32_t)(tstart / DDS_NSECS_IN_SEC), (int32_t)(tstart % DDS_NSECS_IN_SEC) / 1000);
+        tprintf("run limit reached, test failed\n");
         CU_FAIL_FATAL("Run limit reached");
         test_finished = true;
         continue;
       }
       else
       {
-        printf("%d.%06d restarting test with ldur %"PRIu32"\n",
-               (int32_t)(t / DDS_NSECS_IN_SEC), (int32_t)(t % DDS_NSECS_IN_SEC) / 1000, ldur);
+        tprintf("restarting test with ldur %"PRIu32"\n", ldur);
       }
     }
   } while (!test_finished);
@@ -473,7 +457,7 @@ static void test_lease_duration_pwr(bool remote_reader)
   uint32_t status;
   dds_duration_t ldur;
 
-  printf("running test lease_duration_pwr: %s reader\n", remote_reader ? "remote" : "local");
+  tprintf("running test lease_duration_pwr: %s reader\n", remote_reader ? "remote" : "local");
 
   /* topics */
   create_unique_topic_name("ddsc_liveliness_ldurpwr", name, sizeof name);
@@ -506,7 +490,6 @@ static void test_lease_duration_pwr(bool remote_reader)
   dds_builtintopic_endpoint_t *ep;
   ep = dds_get_matched_publication_data(reader, wrs[0]);
   CU_ASSERT_FATAL(ep != NULL);
-  assert(ep != NULL); /* for Clang's static analyzer */
   CU_ASSERT_EQUAL_FATAL(ep->qos->liveliness.lease_duration, DDS_MSECS(ldur));
   dds_builtintopic_free_endpoint (ep);
 
@@ -552,7 +535,7 @@ static void test_create_delete_writer_stress(bool remote_reader)
   Space_Type1 sample = {0, 0, 0};
   int64_t ldur = 1000;
 
-  printf("running test create_delete_writer_stress: %s reader\n", remote_reader ? "remote" : "local");
+  tprintf("running test create_delete_writer_stress: %s reader\n", remote_reader ? "remote" : "local");
 
   /* topics */
   create_unique_topic_name("ddsc_liveliness_wr_stress", name, sizeof name);
@@ -590,21 +573,21 @@ static void test_create_delete_writer_stress(bool remote_reader)
       alive_writers_man++;
   }
   dds_delete_qos(wqos);
-  printf("%"PRId64" alive_writers_auto: %"PRIu32", alive_writers_man: %"PRIu32"\n", dds_time(), alive_writers_auto, alive_writers_man);
+  tprintf("%"PRId64" alive_writers_auto: %"PRIu32", alive_writers_man: %"PRIu32"\n", dds_time(), alive_writers_auto, alive_writers_man);
 
   /* wait for auto liveliness writers to become alive and manual-by-pp writers to become not-alive */
   do
   {
     CU_ASSERT_EQUAL_FATAL(dds_get_liveliness_changed_status(reader, &lstatus), DDS_RETCODE_OK);
-    printf("%"PRId64" alive: %"PRIu32", not-alive: %"PRIu32"\n", dds_time(), lstatus.alive_count, lstatus.not_alive_count);
+    tprintf("%"PRId64" alive: %"PRIu32", not-alive: %"PRIu32"\n", dds_time(), lstatus.alive_count, lstatus.not_alive_count);
     dds_sleepfor(DDS_MSECS(50));
   } while (lstatus.alive_count != alive_writers_auto || lstatus.not_alive_count != alive_writers_man);
 
   /* check that counts are stable after a delay */
-  printf("%"PRId64" wait for half ldur (%"PRId64"ms)\n", dds_time(), ldur);
+  tprintf("%"PRId64" wait for half ldur (%"PRId64"ms)\n", dds_time(), ldur);
   dds_sleepfor(DDS_MSECS(ldur / 2));
   CU_ASSERT_EQUAL_FATAL(dds_get_liveliness_changed_status(reader, &lstatus), DDS_RETCODE_OK);
-  printf("%"PRId64" alive: %"PRIu32", not-alive: %"PRIu32"\n", dds_time(), lstatus.alive_count, lstatus.not_alive_count);
+  tprintf("%"PRId64" alive: %"PRIu32", not-alive: %"PRIu32"\n", dds_time(), lstatus.alive_count, lstatus.not_alive_count);
   CU_ASSERT_FATAL(lstatus.alive_count == alive_writers_auto && lstatus.not_alive_count == alive_writers_man);
 
   /* cleanup remaining writers */
@@ -617,7 +600,7 @@ static void test_create_delete_writer_stress(bool remote_reader)
   do
   {
     CU_ASSERT_EQUAL_FATAL(dds_get_liveliness_changed_status(reader, &lstatus), DDS_RETCODE_OK);
-    printf("%"PRId64" alive: %"PRIu32", not: %"PRIu32"\n", dds_time(), lstatus.alive_count, lstatus.not_alive_count);
+    tprintf("%"PRId64" alive: %"PRIu32", not: %"PRIu32"\n", dds_time(), lstatus.alive_count, lstatus.not_alive_count);
     dds_sleepfor(DDS_MSECS(ldur / 10));
   } while (lstatus.alive_count > 0 || lstatus.not_alive_count > 0);
   CU_ASSERT_EQUAL_FATAL(dds_waitset_detach(waitset, reader), DDS_RETCODE_OK);
@@ -655,7 +638,7 @@ static void test_status_counts(bool remote_reader)
   dds_duration_t ldur = DDS_MSECS(500);
   Space_Type1 sample = {1, 0, 0};
 
-  printf("running test status_counts: %s reader\n", remote_reader ? "remote" : "local");
+  tprintf("running test status_counts: %s reader\n", remote_reader ? "remote" : "local");
 
   /* topics */
   create_unique_topic_name("ddsc_liveliness_status_counts", name, sizeof name);
@@ -754,8 +737,8 @@ static void test_assert_liveliness(uint32_t wr_cnt_auto, uint32_t wr_cnt_man_pp,
   {
     wr_cnt = 0;
     assert(wr_cnt_auto + wr_cnt_man_pp + wr_cnt_man_tp < MAX_WRITERS);
-    printf("running test assert_liveliness: auto/man-by-part/man-by-topic %"PRIu32"/%"PRIu32"/%"PRIu32" with ldur %"PRIu32", %s reader\n",
-           wr_cnt_auto, wr_cnt_man_pp, wr_cnt_man_tp, ldur, remote_reader ? "remote" : "local");
+    tprintf("running test assert_liveliness: auto/man-by-part/man-by-topic %"PRIu32"/%"PRIu32"/%"PRIu32" with ldur %"PRIu32", %s reader\n",
+            wr_cnt_auto, wr_cnt_man_pp, wr_cnt_man_tp, ldur, remote_reader ? "remote" : "local");
 
     /* topics */
     create_unique_topic_name("ddsc_liveliness_assert", name, sizeof name);
@@ -782,8 +765,7 @@ static void test_assert_liveliness(uint32_t wr_cnt_auto, uint32_t wr_cnt_man_pp,
     if (t - tstart > DDS_MSECS(ldur) / 2)
     {
       ldur *= 10 / (run + 1);
-      printf("%d.%06d failed to create writers with non-automatic liveliness kind in time\n",
-             (int32_t)(t / DDS_NSECS_IN_SEC), (int32_t)(t % DDS_NSECS_IN_SEC) / 1000);
+      tprintf("failed to create writers with non-automatic liveliness kind in time\n");
     }
     else
     {
@@ -804,11 +786,11 @@ static void test_assert_liveliness(uint32_t wr_cnt_auto, uint32_t wr_cnt_man_pp,
         dds_sleepfor(DDS_MSECS(50));
       } while (dds_time() < tstop);
       CU_ASSERT_EQUAL_FATAL(dds_get_liveliness_changed_status(reader, &lstatus), DDS_RETCODE_OK);
-      printf("writers alive with dds_assert_liveliness on all writers: %"PRIu32", writers stopped: %"PRIu32"\n", lstatus.alive_count, stopped);
+      tprintf("writers alive with dds_assert_liveliness on all writers: %"PRIu32", writers stopped: %"PRIu32"\n", lstatus.alive_count, stopped);
       if (lstatus.alive_count != wr_cnt_auto + wr_cnt_man_pp + wr_cnt_man_tp || stopped != 0)
       {
         ldur *= 10 / (run + 1);
-        printf("incorrect number of writers alive or stopped writers\n");
+        tprintf("incorrect number of writers alive or stopped writers\n");
       }
       else
       {
@@ -825,11 +807,11 @@ static void test_assert_liveliness(uint32_t wr_cnt_auto, uint32_t wr_cnt_man_pp,
           dds_sleepfor(DDS_MSECS(50));
         } while (dds_time() < tstop);
         dds_get_liveliness_changed_status(reader, &lstatus);
-        printf("writers alive with dds_assert_liveliness on participant: %"PRIu32", writers stopped: %"PRIu32"\n", lstatus.alive_count, stopped);
+        tprintf("writers alive with dds_assert_liveliness on participant: %"PRIu32", writers stopped: %"PRIu32"\n", lstatus.alive_count, stopped);
         if (lstatus.alive_count != wr_cnt_auto + wr_cnt_man_pp || stopped != wr_cnt_man_tp)
         {
           ldur *= 10 / (run + 1);
-          printf("incorrect number of writers alive or stopped writers\n");
+          tprintf("incorrect number of writers alive or stopped writers\n");
         }
         else
         {
@@ -856,7 +838,7 @@ static void test_assert_liveliness(uint32_t wr_cnt_auto, uint32_t wr_cnt_man_pp,
       }
       else
       {
-        printf("restarting test with ldur %"PRIu32"\n", ldur);
+        tprintf("restarting test with ldur %"PRIu32"\n", ldur);
       }
     }
   } while (!test_finished);
@@ -889,12 +871,12 @@ static void liveliness_changed_listener (dds_entity_t rd, const dds_liveliness_c
   {
     if (st->w0_handle == 0)
     {
-      printf ("liveliness_changed_listener: w0 = %"PRIx64"\n", status.last_publication_handle);
+      tprintf ("liveliness_changed_listener: w0 = %"PRIx64"\n", status.last_publication_handle);
       st->w0_handle = status.last_publication_handle;
     }
     else
     {
-      printf ("liveliness_changed_listener: too many writer handles\n");
+      tprintf ("liveliness_changed_listener: too many writer handles\n");
       st->weirdness = true;
     }
   }
@@ -910,12 +892,12 @@ static void liveliness_changed_listener (dds_entity_t rd, const dds_liveliness_c
           st->w0_alive++;
         else
         {
-          printf ("liveliness_changed_listener: alive_count_change = %d: unrecognized writer\n", status.alive_count_change);
+          tprintf ("liveliness_changed_listener: alive_count_change = %d: unrecognized writer\n", status.alive_count_change);
           st->weirdness = true;
         }
         break;
       default:
-        printf ("liveliness_changed_listener: alive_count_change = %d\n", status.alive_count_change);
+        tprintf ("liveliness_changed_listener: alive_count_change = %d\n", status.alive_count_change);
         st->weirdness = true;
     }
 
@@ -928,18 +910,18 @@ static void liveliness_changed_listener (dds_entity_t rd, const dds_liveliness_c
           st->w0_not_alive++;
         else
         {
-          printf ("liveliness_changed_listener: not_alive_count_change = %d: unrecognized writer\n", status.not_alive_count_change);
+          tprintf ("liveliness_changed_listener: not_alive_count_change = %d: unrecognized writer\n", status.not_alive_count_change);
           st->weirdness = true;
         }
         break;
       default:
-        printf ("liveliness_changed_listener: not_alive_count_change = %d\n", status.not_alive_count_change);
+        tprintf ("liveliness_changed_listener: not_alive_count_change = %d\n", status.not_alive_count_change);
         st->weirdness = true;
     }
   }
   else
   {
-    printf ("liveliness_changed_listener: alive_count_change = 0 && not_alive_count_change = 0\n");
+    tprintf ("liveliness_changed_listener: alive_count_change = 0 && not_alive_count_change = 0\n");
     st->weirdness = true;
   }
   ddsrt_mutex_unlock (&st->lock);
@@ -965,7 +947,7 @@ static unsigned get_and_check_status (dds_entity_t reader, dds_entity_t writer_a
   rc = dds_get_publication_matched_status(writer_active, &pstatus);
   CU_ASSERT_FATAL(rc == DDS_RETCODE_OK);
   CU_ASSERT_FATAL(lstatus.alive_count + lstatus.not_alive_count <= 2);
-  printf ("sub %d | alive %d | not-alive %d | pub %d | data %d\n", (int)sstatus.current_count, (int)lstatus.alive_count, (int)lstatus.not_alive_count, (int)pstatus.current_count, dstatus != 0);
+  tprintf ("sub %d | alive %d | not-alive %d | pub %d | data %d\n", (int)sstatus.current_count, (int)lstatus.alive_count, (int)lstatus.not_alive_count, (int)pstatus.current_count, dstatus != 0);
   if (dstatus)
     result |= STATUS_DATA;
   if (sstatus.current_count == 2 && lstatus.not_alive_count == 2 && pstatus.current_count == 1)
@@ -1064,10 +1046,10 @@ static void wait_for_notalive (dds_entity_t reader, struct liveliness_changed_st
   dds_return_t rc;
   rc = dds_get_liveliness_changed_status(reader, &lstatus);
   CU_ASSERT_FATAL(rc == DDS_RETCODE_OK);
-  printf("early liveliness changed status: alive %"PRIu32" not-alive %"PRIu32"\n", lstatus.alive_count, lstatus.not_alive_count);
+  tprintf("early liveliness changed status: alive %"PRIu32" not-alive %"PRIu32"\n", lstatus.alive_count, lstatus.not_alive_count);
 
   ddsrt_mutex_lock (&listener_state->lock);
-  printf("early w0 %"PRIx64" alive %"PRIu32" not-alive %"PRIu32"\n", listener_state->w0_handle, listener_state->w0_alive, listener_state->w0_not_alive);
+  tprintf("early w0 %"PRIx64" alive %"PRIu32" not-alive %"PRIu32"\n", listener_state->w0_handle, listener_state->w0_alive, listener_state->w0_not_alive);
   CU_ASSERT_FATAL(!listener_state->weirdness);
   CU_ASSERT_FATAL(listener_state->w0_handle != 0);
   while (listener_state->w0_not_alive < listener_state->w0_alive && retries-- > 0)
@@ -1079,8 +1061,8 @@ static void wait_for_notalive (dds_entity_t reader, struct liveliness_changed_st
     ddsrt_mutex_lock(&listener_state->lock);
   }
 
-  printf("late liveliness changed status: alive %"PRIu32" not-alive %"PRIu32"\n", lstatus.alive_count, lstatus.not_alive_count);
-  printf("final w0 %"PRIx64" alive %"PRIu32" not-alive %"PRIu32"\n", listener_state->w0_handle, listener_state->w0_alive, listener_state->w0_not_alive);
+  tprintf("late liveliness changed status: alive %"PRIu32" not-alive %"PRIu32"\n", lstatus.alive_count, lstatus.not_alive_count);
+  tprintf("final w0 %"PRIx64" alive %"PRIu32" not-alive %"PRIu32"\n", listener_state->w0_handle, listener_state->w0_alive, listener_state->w0_not_alive);
   CU_ASSERT_FATAL(listener_state->w0_alive == listener_state->w0_not_alive);
   ddsrt_mutex_unlock(&listener_state->lock);
 }
@@ -1142,7 +1124,7 @@ static void lease_duration_zero_or_one_impl (dds_duration_t sleep, dds_livelines
     else
       exp_alive = nsamples - nsamples / 5; /* if sleeping, expect the vast majority (80%) of the writes to toggle liveliness */
     ddsrt_mutex_lock(&listener_state.lock);
-    printf("check w0_alive %"PRIu32" >= %"PRIu32"\n", listener_state.w0_alive, exp_alive);
+    tprintf("check w0_alive %"PRIu32" >= %"PRIu32"\n", listener_state.w0_alive, exp_alive);
     CU_ASSERT_FATAL(listener_state.w0_alive >= exp_alive);
     ddsrt_mutex_unlock(&listener_state.lock);
   }
@@ -1171,7 +1153,7 @@ CU_Test(ddsc_liveliness, lease_duration_zero_or_one, .init = liveliness_init, .f
           dds_duration_t s = sleep[sleep_idx];
           dds_liveliness_kind_t k = lkind[lkind_idx];
           dds_duration_t d = ldur[ldur_idx];
-          printf ("### lease_duration_zero_or_one: sleep = %"PRId64" lkind = %d ldur = %"PRId64" reader = %s\n", s, (int) k, d, rrd ? "remote" : "local");
+          tprintf ("### lease_duration_zero_or_one: sleep = %"PRId64" lkind = %d ldur = %"PRId64" reader = %s\n", s, (int) k, d, rrd ? "remote" : "local");
           lease_duration_zero_or_one_impl (s, k, d, rrd);
           printf ("\n");
         }

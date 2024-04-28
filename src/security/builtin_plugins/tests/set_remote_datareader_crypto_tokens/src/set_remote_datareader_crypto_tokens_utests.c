@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2019 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include "dds/ddsrt/heap.h"
 #include "dds/ddsrt/string.h"
 #include "dds/ddsrt/types.h"
@@ -16,19 +15,17 @@
 #include "dds/security/dds_security_api.h"
 #include "dds/security/core/dds_security_serialize.h"
 #include "dds/security/core/dds_security_utils.h"
-#include "dds/security/core/shared_secret.h"
+#include "dds/security/core/dds_security_shared_secret.h"
 #include "dds/security/openssl_support.h"
 #include "CUnit/CUnit.h"
 #include "CUnit/Test.h"
 #include "common/src/loader.h"
 #include "crypto_objects.h"
+#include "crypto_tokens.h"
 
 #define TEST_SHARED_SECRET_SIZE 32
 #define CRYPTO_TRANSFORM_KIND(k) (*(uint32_t *)&((k)[0]))
 #define CRYPTO_TRANSFORM_ID(k) (*(uint32_t *)&((k)[0]))
-
-static const char *CRYPTO_TOKEN_CLASS_ID = "DDS:Crypto:AES_GCM_GMAC";
-static const char *CRYPTO_TOKEN_PROPERTY_NAME = "dds.cryp.keymat";
 
 static struct plugins_hdl *plugins = NULL;
 static dds_security_cryptography *crypto = NULL;
@@ -311,11 +308,11 @@ static void create_reader_tokens(DDS_Security_DatawriterCryptoTokenSeq *tokens)
 {
   tokens->_length = tokens->_maximum = 1;
   tokens->_buffer = DDS_Security_DataHolderSeq_allocbuf(1);
-  tokens->_buffer[0].class_id = ddsrt_strdup(CRYPTO_TOKEN_CLASS_ID);
+  tokens->_buffer[0].class_id = ddsrt_strdup(DDS_CRYPTOTOKEN_CLASS_ID);
   tokens->_buffer[0].binary_properties._length = 1;
   tokens->_buffer[0].binary_properties._maximum = 1;
   tokens->_buffer[0].binary_properties._buffer = DDS_Security_BinaryPropertySeq_allocbuf(1);
-  tokens->_buffer[0].binary_properties._buffer[0].name = ddsrt_strdup(CRYPTO_TOKEN_PROPERTY_NAME);
+  tokens->_buffer[0].binary_properties._buffer[0].name = ddsrt_strdup(DDS_CRYPTOTOKEN_PROP_KEYMAT);
   create_key_material(&tokens->_buffer[0].binary_properties._buffer[0].value, false);
 }
 
@@ -323,11 +320,11 @@ static void create_reader_tokens_no_key_material(DDS_Security_DatawriterCryptoTo
 {
   tokens->_length = tokens->_maximum = 1;
   tokens->_buffer = DDS_Security_DataHolderSeq_allocbuf(1);
-  tokens->_buffer[0].class_id = ddsrt_strdup(CRYPTO_TOKEN_CLASS_ID);
+  tokens->_buffer[0].class_id = ddsrt_strdup(DDS_CRYPTOTOKEN_CLASS_ID);
   tokens->_buffer[0].binary_properties._length = 1;
   tokens->_buffer[0].binary_properties._maximum = 1;
   tokens->_buffer[0].binary_properties._buffer = DDS_Security_BinaryPropertySeq_allocbuf(1);
-  tokens->_buffer[0].binary_properties._buffer[0].name = ddsrt_strdup(CRYPTO_TOKEN_PROPERTY_NAME);
+  tokens->_buffer[0].binary_properties._buffer[0].name = ddsrt_strdup(DDS_CRYPTOTOKEN_PROP_KEYMAT);
 }
 
 static void serialize_key_material(DDS_Security_OctetSeq *seq, DDS_Security_KeyMaterial_AES_GCM_GMAC *keymat)
@@ -595,7 +592,7 @@ CU_Test(ddssec_builtin_set_remote_datareader_crypto_tokens, invalid_tokens, .ini
     CU_ASSERT(exception.message != NULL);
     reset_exception(&exception);
     ddsrt_free(tokens._buffer[0].class_id);
-    tokens._buffer[0].class_id = ddsrt_strdup(CRYPTO_TOKEN_CLASS_ID);
+    tokens._buffer[0].class_id = ddsrt_strdup(DDS_CRYPTOTOKEN_CLASS_ID);
   }
 
   /* no key material, binary_property missing */
@@ -661,7 +658,7 @@ CU_Test(ddssec_builtin_set_remote_datareader_crypto_tokens, invalid_tokens, .ini
     CU_ASSERT(exception.message != NULL);
     reset_exception(&exception);
     ddsrt_free(tokens._buffer[0].binary_properties._buffer[0].name);
-    tokens._buffer[0].binary_properties._buffer[0].name = ddsrt_strdup(CRYPTO_TOKEN_PROPERTY_NAME);
+    tokens._buffer[0].binary_properties._buffer[0].name = ddsrt_strdup(DDS_CRYPTOTOKEN_PROP_KEYMAT);
   }
 
   DDS_Security_DataHolderSeq_deinit(&tokens);

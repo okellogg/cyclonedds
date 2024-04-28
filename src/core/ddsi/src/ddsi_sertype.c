@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2022 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <stddef.h>
 #include <ctype.h>
 #include <assert.h>
@@ -19,16 +18,14 @@
 #include "dds/ddsrt/mh3.h"
 #include "dds/ddsrt/hopscotch.h"
 #include "dds/ddsrt/string.h"
-#include "dds/ddsi/q_bswap.h"
-#include "dds/ddsi/q_config.h"
-#include "dds/ddsi/q_freelist.h"
+#include "dds/ddsi/ddsi_freelist.h"
 #include "dds/ddsi/ddsi_iid.h"
-#include "dds/ddsi/ddsi_plist_generic.h"
 #include "dds/ddsi/ddsi_sertype.h"
 #include "dds/ddsi/ddsi_serdata.h"
-#include "dds/ddsi/ddsi_serdata_default.h"
-#include "dds/ddsi/ddsi_serdata_pserop.h"
 #include "dds/ddsi/ddsi_domaingv.h"
+#include "ddsi__plist_generic.h"
+#include "ddsi__serdata_pserop.h"
+#include "dds/cdr/dds_cdrstream.h"
 
 #ifndef _WIN32
 void ddsi_sertype_v0 (struct ddsi_sertype_v0 *dummy)
@@ -47,7 +44,7 @@ bool ddsi_sertype_equal (const struct ddsi_sertype *a, const struct ddsi_sertype
     return false;
   if (a->serdata_ops != b->serdata_ops)
     return false;
-  if (a->typekind_no_key != b->typekind_no_key)
+  if (a->has_key != b->has_key)
     return false;
   return a->ops->equal (a, b);
 }
@@ -56,7 +53,7 @@ uint32_t ddsi_sertype_hash (const struct ddsi_sertype *a)
 {
   uint32_t h;
   h = ddsrt_mh3 (a->type_name, strlen (a->type_name), a->serdata_basehash);
-  h ^= a->serdata_basehash ^ (uint32_t) a->typekind_no_key;
+  h ^= a->serdata_basehash ^ (uint32_t) a->has_key;
   return h ^ a->ops->hash (a);
 }
 
@@ -91,20 +88,26 @@ void ddsi_sertype_register_locked (struct ddsi_domaingv *gv, struct ddsi_sertype
   ddsrt_atomic_stvoidp (&sertype->gv, gv);
   ddsrt_atomic_fence_stst ();
   ddsrt_atomic_or32 (&sertype->flags_refc, DDSI_SERTYPE_REGISTERED);
-  int x = ddsrt_hh_add (gv->sertypes, sertype);
-  assert (x);
-  (void) x;
+  ddsrt_hh_add_absent (gv->sertypes, sertype);
 }
 
-void ddsi_sertype_unref_locked (struct ddsi_domaingv * const gv, struct ddsi_sertype *sertype)
+static void ddsi_sertype_unref_locked (struct ddsi_domaingv * const gv, struct ddsi_sertype *sertype)
 {
   const uint32_t flags_refc1 = ddsrt_atomic_dec32_nv (&sertype->flags_refc);
   assert (!(flags_refc1 & DDSI_SERTYPE_REGISTERED) || gv == ddsrt_atomic_ldvoidp (&sertype->gv));
   if ((flags_refc1 & DDSI_SERTYPE_REFC_MASK) == 0)
   {
-    if (flags_refc1 & DDSI_SERTYPE_REGISTERED)
-      (void) ddsrt_hh_remove (gv->sertypes, sertype);
-    ddsi_sertype_free (sertype);
+    if (sertype->base_sertype)
+    {
+      ddsi_sertype_unref_locked (gv, (struct ddsi_sertype *) sertype->base_sertype);
+      ddsrt_free (sertype);
+    }
+    else
+    {
+      if (flags_refc1 & DDSI_SERTYPE_REGISTERED)
+        ddsrt_hh_remove_present (gv->sertypes, sertype);
+      ddsi_sertype_free (sertype);
+    }
   }
 }
 
@@ -142,78 +145,60 @@ void ddsi_sertype_unref (struct ddsi_sertype *sertype)
       return;
     }
   } while (!ddsrt_atomic_cas32 (&sertype->flags_refc, flags_refc, flags_refc1));
+
   if ((flags_refc1 & DDSI_SERTYPE_REFC_MASK) == 0)
   {
-    assert (!(flags_refc1 & DDSI_SERTYPE_REGISTERING));
-    ddsi_sertype_free (sertype);
-    return;
+    /* If base_type is set this, is a derived sertype, which is a shallow copy of its base
+       sertype. So don't free anything for the derived sertype, just unref the base sertype */
+    if (sertype->base_sertype)
+    {
+      ddsi_sertype_unref ((struct ddsi_sertype *) sertype->base_sertype);
+      ddsrt_free (sertype);
+    }
+    else
+    {
+      assert (!(flags_refc1 & DDSI_SERTYPE_REGISTERING));
+      ddsi_sertype_free (sertype);
+    }
   }
 }
 
-struct sertype_ser
-{
-  char *type_name;
-  bool typekind_no_key;
-};
-
-const enum pserop sertype_ser_ops[] = { XS, Xb, XSTOP };
-
-bool ddsi_sertype_serialize (const struct ddsi_sertype *tp, size_t *dst_sz, unsigned char **dst_buf)
-{
-  struct sertype_ser d = { tp->type_name, tp->typekind_no_key };
-  size_t dst_pos = 0;
-
-  if (!tp->ops->serialized_size || !tp->ops->serialize)
-    return false;
-  *dst_sz = 0;
-  plist_ser_generic_size_embeddable (dst_sz, &d, 0, sertype_ser_ops);
-  tp->ops->serialized_size (tp, dst_sz);
-  *dst_buf = ddsrt_malloc (*dst_sz);
-  if (plist_ser_generic_embeddable ((char *) *dst_buf, &dst_pos, &d, 0, sertype_ser_ops, DDSRT_BOSEL_LE) < 0) // xtypes spec (7.3.4.5) requires LE encoding for type serialization
-    return false;
-  if (!tp->ops->serialize (tp, &dst_pos, *dst_buf))
-    return false;
-  assert (dst_pos == *dst_sz);
-  return true;
-}
-
-bool ddsi_sertype_deserialize (struct ddsi_domaingv *gv, struct ddsi_sertype *tp, const struct ddsi_sertype_ops *sertype_ops, size_t sz, unsigned char *serdata)
-{
-  struct sertype_ser d;
-  size_t srcoff = 0;
-  if (!sertype_ops->deserialize)
-    return false;
-  DDSRT_WARNING_MSVC_OFF(6326)
-  if (plist_deser_generic_srcoff (&d, serdata, sz, &srcoff, DDSRT_ENDIAN != DDSRT_LITTLE_ENDIAN, sertype_ser_ops) < 0)
-    return false;
-  DDSRT_WARNING_MSVC_ON(6326)
-  ddsrt_atomic_st32 (&tp->flags_refc, 1);
-  tp->ops = sertype_ops;
-  tp->type_name = ddsrt_strdup (d.type_name);
-  tp->typekind_no_key = d.typekind_no_key;
-  if (!tp->ops->deserialize (gv, tp, sz, serdata, &srcoff))
-  {
-    ddsrt_free (tp->type_name);
-    return false;
-  }
-  tp->serdata_basehash = ddsi_sertype_compute_serdata_basehash (tp->serdata_ops);
-  ddsrt_atomic_stvoidp (&tp->gv, NULL);
-  return true;
-}
-
-void ddsi_sertype_init (struct ddsi_sertype *tp, const char *type_name, const struct ddsi_sertype_ops *sertype_ops, const struct ddsi_serdata_ops *serdata_ops, bool typekind_no_key)
+void ddsi_sertype_init_props (struct ddsi_sertype *tp, const char *type_name, const struct ddsi_sertype_ops *sertype_ops, const struct ddsi_serdata_ops *serdata_ops, size_t sizeof_type, dds_data_type_properties_t data_type_props, uint32_t allowed_data_representation, uint32_t flags)
 {
   // only one version for now
   assert (sertype_ops->version == ddsi_sertype_v0);
+  assert ((flags & ~(uint32_t)DDSI_SERTYPE_PROPS_FLAG_MASK) == 0);
+  assert (sizeof_type > 0 || !(data_type_props & DDS_DATA_TYPE_IS_MEMCPY_SAFE));
+  assert (sizeof_type <= UINT32_MAX);
 
   ddsrt_atomic_st32 (&tp->flags_refc, 1);
   tp->type_name = ddsrt_strdup (type_name);
   tp->ops = sertype_ops;
   tp->serdata_ops = serdata_ops;
   tp->serdata_basehash = ddsi_sertype_compute_serdata_basehash (tp->serdata_ops);
-  tp->typekind_no_key = typekind_no_key;
-  tp->wrapped_sertopic = NULL;
+  tp->request_keyhash = (flags & DDSI_SERTYPE_FLAG_REQUEST_KEYHASH) ? 1u : 0u;
+  tp->has_key = (data_type_props & DDS_DATA_TYPE_CONTAINS_KEY) ? 1u : 0u;
+  tp->is_memcpy_safe = (data_type_props & DDS_DATA_TYPE_IS_MEMCPY_SAFE) ? 1u : 0u;
+  tp->allowed_data_representation = allowed_data_representation;
+  tp->base_sertype = NULL;
+  tp->sizeof_type = (uint32_t) sizeof_type;
+  tp->data_type_props = data_type_props;
   ddsrt_atomic_stvoidp (&tp->gv, NULL);
+}
+
+void ddsi_sertype_init_flags (struct ddsi_sertype *tp, const char *type_name, const struct ddsi_sertype_ops *sertype_ops, const struct ddsi_serdata_ops *serdata_ops, uint32_t flags)
+{
+  dds_data_type_properties_t data_type_props = 0;
+  if (!(flags & DDSI_SERTYPE_FLAG_TOPICKIND_NO_KEY))
+    data_type_props |= DDS_DATA_TYPE_CONTAINS_KEY;
+  // Discard "fixed size" flag: making use of this flag requires knowing the size
+  flags &= ~(DDSI_SERTYPE_FLAG_TOPICKIND_NO_KEY | DDSI_SERTYPE_FLAG_FIXED_SIZE);
+  ddsi_sertype_init_props (tp, type_name, sertype_ops, serdata_ops, 0, data_type_props, DDS_DATA_REPRESENTATION_RESTRICT_DEFAULT, flags);
+}
+
+void ddsi_sertype_init (struct ddsi_sertype *tp, const char *type_name, const struct ddsi_sertype_ops *sertype_ops, const struct ddsi_serdata_ops *serdata_ops, bool typekind_no_key)
+{
+  ddsi_sertype_init_flags (tp, type_name, sertype_ops, serdata_ops, typekind_no_key ? DDSI_SERTYPE_FLAG_TOPICKIND_NO_KEY : 0);
 }
 
 void ddsi_sertype_fini (struct ddsi_sertype *tp)
@@ -235,12 +220,94 @@ uint32_t ddsi_sertype_compute_serdata_basehash (const struct ddsi_serdata_ops *o
   return res;
 }
 
-extern inline void ddsi_sertype_free (struct ddsi_sertype *tp);
-extern inline void ddsi_sertype_zero_samples (const struct ddsi_sertype *tp, void *samples, size_t count);
-extern inline void ddsi_sertype_realloc_samples (void **ptrs, const struct ddsi_sertype *tp, void *old, size_t oldcount, size_t count);
-extern inline void ddsi_sertype_free_samples (const struct ddsi_sertype *tp, void **ptrs, size_t count, dds_free_op_t op);
-extern inline void ddsi_sertype_zero_sample (const struct ddsi_sertype *tp, void *sample);
-extern inline void *ddsi_sertype_alloc_sample (const struct ddsi_sertype *tp);
-extern inline void ddsi_sertype_free_sample (const struct ddsi_sertype *tp, void *sample, dds_free_op_t op);
-extern inline bool ddsi_sertype_typeid_hash (const struct ddsi_sertype *tp, unsigned char *buf);
-extern inline bool ddsi_sertype_assignable_from (const struct ddsi_sertype *type_a, const struct ddsi_sertype *type_b);
+uint16_t ddsi_sertype_get_native_enc_identifier (uint32_t enc_version, uint32_t enc_format)
+{
+#define CONCAT_(a,b) (a ## b)
+#define CONCAT(id,suffix) CONCAT_(id,suffix)
+
+#if (DDSRT_ENDIAN == DDSRT_LITTLE_ENDIAN)
+#define SUFFIX _LE
+#else
+#define SUFFIX _BE
+#endif
+
+  switch (enc_version)
+  {
+    case DDSI_RTPS_CDR_ENC_VERSION_1:
+      if (enc_format == DDSI_RTPS_CDR_ENC_FORMAT_PL)
+        return CONCAT(DDSI_RTPS_PL_CDR, SUFFIX);
+      return CONCAT(DDSI_RTPS_CDR, SUFFIX);
+    case DDSI_RTPS_CDR_ENC_VERSION_2:
+      if (enc_format == DDSI_RTPS_CDR_ENC_FORMAT_PL)
+        return CONCAT(DDSI_RTPS_PL_CDR2, SUFFIX);
+      if (enc_format == DDSI_RTPS_CDR_ENC_FORMAT_DELIMITED)
+        return CONCAT(DDSI_RTPS_D_CDR2, SUFFIX);
+      return CONCAT(DDSI_RTPS_CDR2, SUFFIX);
+    default:
+      abort (); /* unsupported */
+  }
+#undef SUFFIX
+#undef CONCAT
+#undef CONCAT_
+}
+
+uint16_t ddsi_sertype_extensibility_enc_format (enum dds_cdr_type_extensibility type_extensibility)
+{
+  switch (type_extensibility)
+  {
+    case DDS_CDR_TYPE_EXT_FINAL:
+      return DDSI_RTPS_CDR_ENC_FORMAT_PLAIN;
+    case DDS_CDR_TYPE_EXT_APPENDABLE:
+      return DDSI_RTPS_CDR_ENC_FORMAT_DELIMITED;
+    case DDS_CDR_TYPE_EXT_MUTABLE:
+      return DDSI_RTPS_CDR_ENC_FORMAT_PL;
+    default:
+      abort ();
+  }
+}
+
+uint32_t ddsi_sertype_enc_id_xcdr_version (uint16_t cdr_identifier)
+{
+  switch (cdr_identifier)
+  {
+    case DDSI_RTPS_CDR_LE: case DDSI_RTPS_CDR_BE:
+      return DDSI_RTPS_CDR_ENC_VERSION_1;
+    case DDSI_RTPS_CDR2_LE: case DDSI_RTPS_CDR2_BE:
+    case DDSI_RTPS_D_CDR2_LE: case DDSI_RTPS_D_CDR2_BE:
+    case DDSI_RTPS_PL_CDR2_LE: case DDSI_RTPS_PL_CDR2_BE:
+      return DDSI_RTPS_CDR_ENC_VERSION_2;
+    default:
+      return DDSI_RTPS_CDR_ENC_VERSION_UNDEF;
+  }
+}
+
+uint32_t ddsi_sertype_enc_id_enc_format (uint16_t cdr_identifier)
+{
+  switch (cdr_identifier)
+  {
+    case DDSI_RTPS_CDR_LE: case DDSI_RTPS_CDR_BE:
+    case DDSI_RTPS_CDR2_LE: case DDSI_RTPS_CDR2_BE:
+      return DDSI_RTPS_CDR_ENC_FORMAT_PLAIN;
+    case DDSI_RTPS_D_CDR2_LE: case DDSI_RTPS_D_CDR2_BE:
+      return DDSI_RTPS_CDR_ENC_FORMAT_DELIMITED;
+    case DDSI_RTPS_PL_CDR2_LE: case DDSI_RTPS_PL_CDR2_BE:
+      return DDSI_RTPS_CDR_ENC_FORMAT_PL;
+    default:
+      abort ();
+  }
+}
+
+DDS_EXPORT extern inline void ddsi_sertype_free (struct ddsi_sertype *tp);
+DDS_EXPORT extern inline void ddsi_sertype_zero_samples (const struct ddsi_sertype *tp, void *samples, size_t count);
+DDS_EXPORT extern inline void ddsi_sertype_realloc_samples (void **ptrs, const struct ddsi_sertype *tp, void *old, size_t oldcount, size_t count);
+DDS_EXPORT extern inline void ddsi_sertype_free_samples (const struct ddsi_sertype *tp, void **ptrs, size_t count, dds_free_op_t op);
+DDS_EXPORT extern inline void ddsi_sertype_zero_sample (const struct ddsi_sertype *tp, void *sample);
+DDS_EXPORT extern inline void *ddsi_sertype_alloc_sample (const struct ddsi_sertype *tp);
+DDS_EXPORT extern inline void ddsi_sertype_free_sample (const struct ddsi_sertype *tp, void *sample, dds_free_op_t op);
+DDS_EXPORT extern inline ddsi_typeid_t * ddsi_sertype_typeid (const struct ddsi_sertype *tp, ddsi_typeid_kind_t kind);
+DDS_EXPORT extern inline ddsi_typemap_t * ddsi_sertype_typemap (const struct ddsi_sertype *tp);
+DDS_EXPORT extern inline ddsi_typeinfo_t * ddsi_sertype_typeinfo (const struct ddsi_sertype *tp);
+DDS_EXPORT extern inline struct ddsi_sertype * ddsi_sertype_derive_sertype (const struct ddsi_sertype *base_sertype, dds_data_representation_id_t data_representation, dds_type_consistency_enforcement_qospolicy_t tce_qos);
+
+DDS_EXPORT extern inline size_t ddsi_sertype_get_serialized_size(const struct ddsi_sertype *tp, const void *sample);
+DDS_EXPORT extern inline bool ddsi_sertype_serialize_into(const struct ddsi_sertype *tp, const void *sample, void *dst_buffer, size_t dst_size);

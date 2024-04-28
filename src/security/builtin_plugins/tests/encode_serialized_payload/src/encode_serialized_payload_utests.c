@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2019 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2020 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <assert.h>
 
 #include "dds/ddsrt/bswap.h"
@@ -19,7 +18,7 @@
 #include "dds/security/dds_security_api.h"
 #include "dds/security/core/dds_security_serialize.h"
 #include "dds/security/core/dds_security_utils.h"
-#include "dds/security/core/shared_secret.h"
+#include "dds/security/core/dds_security_shared_secret.h"
 #include "dds/security/openssl_support.h"
 #include "CUnit/CUnit.h"
 #include "CUnit/Test.h"
@@ -564,7 +563,6 @@ static void encode_serialized_payload_check(uint32_t key_size, bool encrypted)
 
   writer_crypto = register_local_datawriter(encrypted);
   CU_ASSERT_FATAL(writer_crypto != 0);
-  assert(writer_crypto != 0); // for Clang's static analyzer
 
   CU_ASSERT(check_protection_kind(writer_crypto, encrypted ? DDS_SECURITY_BASICPROTECTION_KIND_ENCRYPT : DDS_SECURITY_BASICPROTECTION_KIND_SIGN));
 
@@ -586,14 +584,12 @@ static void encode_serialized_payload_check(uint32_t key_size, bool encrypted)
     printf("[ERROR] encode_serialized_payload: %s\n", exception.message ? exception.message : "Error message missing");
   }
   CU_ASSERT_FATAL(result);
-  assert(result); // for Clang's static analyzer
   CU_ASSERT(exception.code == 0);
   CU_ASSERT(exception.message == NULL);
   reset_exception(&exception);
 
   result = split_encoded_data(encoded_buffer._buffer, encoded_buffer._length, &header, &encoded_payload, &footer, encrypted);
   CU_ASSERT_FATAL(result == true);
-  assert(result); // for Clang's static analyzer
   CU_ASSERT(check_payload_encoded(&encoded_payload, &plain_buffer, encrypted));
 
   session_id = ddsrt_fromBE4u(*(uint32_t *)header->session_id);

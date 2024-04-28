@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include "dds/ddsrt/atomics.h"
 #include "dds/ddsrt/cdtors.h"
 #include "dds/ddsrt/sync.h"
@@ -99,26 +98,31 @@ ddsrt_cond_t *ddsrt_get_singleton_cond(void)
 
 #ifdef _WIN32
 #include "dds/ddsrt/threads.h"
+#include "dds/ddsrt/misc.h"
+
+DDSRT_WARNING_GNUC_OFF(missing-prototypes)
+DDSRT_WARNING_CLANG_OFF(missing-prototypes)
 
 /* Executed before DllMain within the context of the thread. Located here too
    avoid removal due to link time optimization. */
 void WINAPI
-ddsrt_cdtor(
-  PVOID handle,
-  DWORD reason,
-  PVOID reserved)
+ddsrt_cdtor(PVOID handle, DWORD reason, PVOID reserved)
 {
+  (void)handle;
+  (void)reason;
+  (void)reserved;
   switch (reason) {
     case DLL_PROCESS_ATTACH:
       ddsrt_init();
       /* fall through */
     case DLL_THREAD_ATTACH:
+      ddsrt_thread_init(reason);
       break;
     case DLL_THREAD_DETACH: /* Specified when thread exits. */
-      ddsrt_thread_fini();
+      ddsrt_thread_fini(reason);
       break;
     case DLL_PROCESS_DETACH: /* Specified when main thread exits. */
-      ddsrt_thread_fini();
+      ddsrt_thread_fini(reason);
       ddsrt_fini();
       break;
     default:
@@ -126,22 +130,27 @@ ddsrt_cdtor(
   }
 }
 
-/* These instructions are very specific to the Windows platform. They register
-   a function (or multiple) as a TLS initialization function. TLS initializers
-   are executed when a thread (or program) attaches or detaches. In contrast to
-   DllMain, a TLS initializer is also executed when the library is linked
-   statically. TLS initializers are always executed before DllMain (both when
-   the library is attached and detached). See http://www.nynaeve.net/?p=190,
-   for a detailed explanation on TLS initializers. Boost and/or POSIX Threads
-   for Windows code bases may also form good sources of information on this
-   subject.
+DDSRT_WARNING_GNUC_ON(missing-prototypes)
+DDSRT_WARNING_CLANG_ON(missing-prototypes)
 
-   These instructions could theoretically be hidden in the build system, but
-   doing so would be going a bit overboard as only Windows offers (and
-   requires) this type of functionality/initialization. Apart from that the
-   logic isn't exactly as trivial as for example determining the endianness of
-   a platform, so keeping this close to the implementation is probably wise. */
-#ifdef _WIN64
+// These instructions are very specific to the Windows platform. They register
+// a function (or multiple) as a TLS initialization function. TLS initializers
+// are executed when a thread (or program) attaches or detaches. In contrast to
+// DllMain, a TLS initializer is also executed when the library is linked
+// statically. TLS initializers are always executed before DllMain (both when
+// the library is attached and detached). See http://www.nynaeve.net/?p=190,
+// for a detailed explanation on TLS initializers. Boost and/or POSIX Threads
+// for Windows code bases may also form good sources of information on this
+// subject.
+//
+// These instructions could theoretically be hidden in the build system, but
+// doing so would be going a bit overboard as only Windows offers (and
+// requires) this type of functionality/initialization. Apart from that the
+// logic isn't exactly as trivial as for example determining the endianness of
+// a platform, so keeping this close to the implementation is probably wise.
+#if __MINGW32__
+  PIMAGE_TLS_CALLBACK __crt_xl_tls_callback__ __attribute__ ((section(".CRT$XLZ"))) = ddsrt_cdtor;
+#elif _WIN64
   #pragma comment (linker, "/INCLUDE:_tls_used")
   #pragma comment (linker, "/INCLUDE:tls_callback_func")
   #pragma const_seg(".CRT$XLZ")

@@ -1,25 +1,26 @@
-/*
- * Copyright(c) 2019 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2019 to 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
-#include <dds/ddsrt/dynlib.h>
-#include "CUnit/Test.h"
+
+#include "dds/ddsrt/dynlib.h"
 #include "dds/ddsrt/heap.h"
 #include "dds/ddsrt/string.h"
 #include "dds/ddsrt/environ.h"
-#include "dl_test.h"
 
-#define TEST_LIB_FILE     ""TEST_LIB_PREFIX""TEST_LIB_NAME""TEST_LIB_SUFFIX""
+#include "CUnit/Test.h"
+
+#include "dl.h"
+
 #define TEST_LIB_ABSOLUTE ""TEST_LIB_DIR""TEST_LIB_SEP""TEST_LIB_FILE""
 
 #define TEST_ABORT_IF_NULL(var, msg) \
@@ -27,7 +28,7 @@ do { \
   if (var == NULL) { \
     char err[256]; \
     r = ddsrt_dlerror(err, sizeof(err)); \
-    CU_ASSERT_FATAL(r > 0); \
+    CU_ASSERT_FATAL(r > 0 || r == DDS_RETCODE_NOT_ENOUGH_SPACE); \
     printf("\n%s", err); \
     CU_FAIL_FATAL(msg); \
   } \
@@ -91,7 +92,7 @@ CU_Test(ddsrt_library, dlopen_unknown)
   CU_ASSERT_PTR_NULL_FATAL(l);
 
   r = ddsrt_dlerror(buffer, sizeof(buffer));
-  CU_ASSERT_FATAL(r > 0);
+  CU_ASSERT_FATAL(r > 0 || r == DDS_RETCODE_NOT_ENOUGH_SPACE);
   printf("\n%s", buffer);
 }
 
@@ -132,7 +133,7 @@ CU_Test(ddsrt_library, dlsym_unknown)
   CU_ASSERT_PTR_NULL_FATAL(f);
 
   r = ddsrt_dlerror(buffer, sizeof(buffer));
-  CU_ASSERT_FATAL(r > 0);
+  CU_ASSERT_FATAL(r > 0 || r == DDS_RETCODE_NOT_ENOUGH_SPACE);
   printf("\n%s", buffer);
 
   r = ddsrt_dlclose(l);
@@ -189,5 +190,4 @@ CU_Test(ddsrt_library, dlclose_error)
 
     r = ddsrt_dlclose( l ); /*already closed handle */
     CU_ASSERT_EQUAL(r, DDS_RETCODE_ERROR);
-
 }

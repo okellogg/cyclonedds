@@ -1,18 +1,18 @@
-/*
- * Copyright(c) 2021 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <assert.h>
 #include <string.h>
 #include <stdlib.h>
 
+#include "idl/heap.h"
 #include "idl/processor.h"
 
 static idl_accept_t idl_accept(const void *node)
@@ -26,8 +26,6 @@ static idl_accept_t idl_accept(const void *node)
     return IDL_ACCEPT_INHERIT_SPEC;
   if (mask & IDL_SWITCH_TYPE_SPEC)
     return IDL_ACCEPT_SWITCH_TYPE_SPEC;
-  if (!(mask & IDL_DECLARATION))
-    return IDL_ACCEPT;
   if (mask & IDL_MODULE)
     return IDL_ACCEPT_MODULE;
   if (mask & IDL_CONST)
@@ -56,6 +54,10 @@ static idl_accept_t idl_accept(const void *node)
     return IDL_ACCEPT_UNION;
   if (mask & IDL_ENUM)
     return IDL_ACCEPT_ENUM;
+  if (mask & IDL_BITMASK)
+    return IDL_ACCEPT_BITMASK;
+  if (mask & IDL_BIT_VALUE)
+    return IDL_ACCEPT_BIT_VALUE;
   return IDL_ACCEPT;
 }
 
@@ -89,14 +91,14 @@ static const idl_node_t *push(struct stack *stack, const idl_node_t *node)
     size_t size = stack->size + 10;
     uint32_t *flags = NULL;
     const idl_node_t **nodes = NULL;
-    if (!(flags = realloc(stack->flags, size*sizeof(*flags))))
+    if (!(flags = idl_realloc(stack->flags, size*sizeof(*flags))))
       return NULL;
     stack->flags = flags;
 #if _MSC_VER
 __pragma(warning(push))
 __pragma(warning(disable: 4090))
 #endif
-    if (!(nodes = realloc(stack->path.nodes, size*sizeof(*nodes))))
+    if (!(nodes = idl_realloc(stack->path.nodes, size*sizeof(*nodes))))
       return NULL;
 #if _MSC_VER
 __pragma(warning(pop))
@@ -121,13 +123,11 @@ static const uint32_t recurse[] = {
   IDL_VISIT_RECURSE|IDL_VISIT_DONT_RECURSE
 };
 
-#if 0
-static idl_visit_iterate_t iterate[] = {
+static uint32_t iterate[] = {
   IDL_VISIT_ITERATE,
   IDL_VISIT_DONT_ITERATE,
   IDL_VISIT_ITERATE|IDL_VISIT_DONT_ITERATE
 };
-#endif
 
 static const uint32_t revisit[] = {
   IDL_VISIT_REVISIT,
@@ -155,9 +155,7 @@ idl_visit(
   assert(visitor);
 
   flags |= recurse[ visitor->recurse == recurse[NO]  ];
-#if 0
   flags |= iterate[ visitor->iterate == iterate[NO]  ];
-#endif
   flags |= revisit[ visitor->revisit != revisit[YES] ];
 
   if (!push(&stack, node))
@@ -197,21 +195,19 @@ idl_visit(
         stack.flags[stack.depth - 1] &= ~recurse[MAYBE];
         stack.flags[stack.depth - 1] |=  recurse[ ((unsigned)ret & recurse[NO]) != 0 ];
       }
-#if 0
       if (ret & (idl_retcode_t)iterate[MAYBE]) {
         stack.flags[stack.depth - 1] &= ~iterate[MAYBE];
-        stack.flags[stack.depth - 1] |=  iterate[ (ret & iterate[NO]) != 0 ];
+        stack.flags[stack.depth - 1] |=  iterate[ ((unsigned)ret & iterate[NO]) != 0 ];
       }
-#endif
       if (ret & (idl_retcode_t)revisit[MAYBE]) {
         stack.flags[stack.depth - 1] &= ~revisit[MAYBE];
         stack.flags[stack.depth - 1] |=  revisit[ ((unsigned)ret & revisit[NO]) != 0 ];
       }
 
       if (ret & IDL_VISIT_TYPE_SPEC) {
-        node = idl_type_spec(node);
+          node = idl_type_spec(node);
         if (ret & IDL_VISIT_UNALIAS_TYPE_SPEC)
-          node = idl_unalias(node, IDL_UNALIAS_IGNORE_ARRAY);
+          node = idl_strip(node, IDL_STRIP_ALIASES|IDL_STRIP_ALIASES_ARRAY);
         assert(node);
         if (!push(&stack, node))
           goto err_push;
@@ -236,10 +232,7 @@ idl_visit(
         if ((ret = callback(pstate, true, &stack.path, node, user_data)) < 0)
           goto err_revisit;
       }
-#if 0
       if (stack.flags[stack.depth - 1] & (IDL_VISIT_TYPE_SPEC|IDL_VISIT_DONT_ITERATE)) {
-#endif
-      if (stack.flags[stack.depth - 1] & (IDL_VISIT_TYPE_SPEC)) {
         (void)pop(&stack);
       } else {
         (void)pop(&stack);
@@ -261,15 +254,15 @@ idl_visit(
 __pragma(warning(push))
 __pragma(warning(disable: 4090))
 #endif
-  if (stack.flags)      free(stack.flags);
-  if (stack.path.nodes) free(stack.path.nodes);
+  if (stack.flags)      idl_free(stack.flags);
+  if (stack.path.nodes) idl_free(stack.path.nodes);
   return IDL_RETCODE_OK;
 err_push:
   ret = IDL_RETCODE_NO_MEMORY;
 err_visit:
 err_revisit:
-  if (stack.flags)      free(stack.flags);
-  if (stack.path.nodes) free(stack.path.nodes);
+  if (stack.flags)      idl_free(stack.flags);
+  if (stack.path.nodes) idl_free(stack.path.nodes);
   return ret;
 #if _MSC_VER
 __pragma(warning(pop))

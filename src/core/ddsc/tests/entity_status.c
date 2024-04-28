@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <limits.h>
 #include <stdlib.h>
 
@@ -298,6 +297,7 @@ CU_Test(ddsc_entity, incompatible_qos, .init=init_entity_status, .fini=fini_enti
 
     ret = dds_waitset_detach(waitSetrd, reader2);
     CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+
     dds_delete(reader2);
 }
 
@@ -544,6 +544,7 @@ CU_Test(ddsc_entity, data_available, .init=init_entity_status, .fini=fini_entity
 
     ret = dds_get_status_changes (rea, &sta);
     CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+    CU_ASSERT(sta & DDS_DATA_AVAILABLE_STATUS);
 
     ret = dds_waitset_detach(waitSetrd, rea);
     CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
@@ -600,12 +601,12 @@ CU_Test(ddsc_entity, all_data_available, .init=init_entity_status, .fini=fini_en
     /* Reset the publication and subscription matched status */
     ret = dds_get_publication_matched_status(wri, NULL);
     CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
-    ret = dds_take_status (rea, &sta, DDS_SUBSCRIPTION_MATCHED_STATUS);
+    ret = dds_take_status (rea, &sta, DDS_SUBSCRIPTION_MATCHED_STATUS | DDS_LIVELINESS_CHANGED_STATUS);
     CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
-    CU_ASSERT_EQUAL_FATAL(sta, DDS_SUBSCRIPTION_MATCHED_STATUS);
-    ret = dds_take_status (reader2, &sta, DDS_SUBSCRIPTION_MATCHED_STATUS);
+    CU_ASSERT_EQUAL_FATAL(sta, DDS_SUBSCRIPTION_MATCHED_STATUS | DDS_LIVELINESS_CHANGED_STATUS);
+    ret = dds_take_status (reader2, &sta, DDS_SUBSCRIPTION_MATCHED_STATUS | DDS_LIVELINESS_CHANGED_STATUS);
     CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
-    CU_ASSERT_EQUAL_FATAL(sta, DDS_SUBSCRIPTION_MATCHED_STATUS);
+    CU_ASSERT_EQUAL_FATAL(sta, DDS_SUBSCRIPTION_MATCHED_STATUS | DDS_LIVELINESS_CHANGED_STATUS);
 
     /* wait for data */
     ret = dds_waitset_wait(waitSetrd, wsresults2, wsresultsize2, waitTimeout);
@@ -620,6 +621,10 @@ CU_Test(ddsc_entity, all_data_available, .init=init_entity_status, .fini=fini_en
     CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
     ret = dds_delete(waitSetrd2);
     CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
+
+    /* Force materialized DATA_ON_READERS */
+    ret = dds_waitset_attach(dds_create_waitset(participant), subscriber, 0);
+    CU_ASSERT_FATAL (ret == 0);
 
     /* Get DATA_ON_READERS status*/
     ret = dds_get_status_changes (subscriber, &sta);
@@ -643,12 +648,12 @@ CU_Test(ddsc_entity, all_data_available, .init=init_entity_status, .fini=fini_en
     /* status after taking the data should be reset */
     ret = dds_get_status_changes (rea, &sta);
     CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
-    CU_ASSERT_NOT_EQUAL(sta, ~DDS_DATA_AVAILABLE_STATUS);
+    CU_ASSERT_FALSE(sta & DDS_DATA_AVAILABLE_STATUS);
 
-    /* status from reader2 */
+    /* status from reader2 should not be reset, as the take does not influence it*/
     ret = dds_get_status_changes (reader2, &sta);
     CU_ASSERT_EQUAL_FATAL(ret, DDS_RETCODE_OK);
-    CU_ASSERT_NOT_EQUAL(sta, ~DDS_DATA_AVAILABLE_STATUS);
+    CU_ASSERT(sta & DDS_DATA_AVAILABLE_STATUS);
 
     /* status from subscriber */
     ret = dds_get_status_changes (subscriber, &sta);

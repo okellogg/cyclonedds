@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2022 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 
 /**
  * @file
@@ -24,6 +23,7 @@
 #include <assert.h>
 
 #include "dds/export.h"
+#include "dds/config.h"
 #include "dds/ddsrt/types.h"
 
 #if defined (__cplusplus)
@@ -176,7 +176,7 @@ DDS_EXPORT size_t ddsrt_ctime(dds_time_t abstime, char *str, size_t size);
  *
  * @returns A timestamp in nanoseconds since UNIX Epoch.
  */
-inline dds_time_t ddsrt_time_add_duration(dds_time_t abstime, dds_duration_t reltime)
+DDS_INLINE_EXPORT inline dds_time_t ddsrt_time_add_duration(dds_time_t abstime, dds_duration_t reltime)
 {
   assert(abstime >= 0);
   assert(reltime >= 0);
@@ -195,7 +195,7 @@ inline dds_time_t ddsrt_time_add_duration(dds_time_t abstime, dds_duration_t rel
  *
  * @returns A timestamp in nanoseconds since UNIX Epoch.
  */
-inline ddsrt_mtime_t ddsrt_mtime_add_duration(ddsrt_mtime_t abstime, dds_duration_t reltime) {
+DDS_INLINE_EXPORT inline ddsrt_mtime_t ddsrt_mtime_add_duration(ddsrt_mtime_t abstime, dds_duration_t reltime) {
   ddsrt_mtime_t t;
   t.v = ddsrt_time_add_duration (abstime.v, reltime);
   return t;
@@ -213,7 +213,7 @@ inline ddsrt_mtime_t ddsrt_mtime_add_duration(ddsrt_mtime_t abstime, dds_duratio
  *
  * @returns A timestamp in nanoseconds since UNIX Epoch.
  */
-inline ddsrt_wctime_t ddsrt_wctime_add_duration(ddsrt_wctime_t abstime, dds_duration_t reltime) {
+DDS_INLINE_EXPORT inline ddsrt_wctime_t ddsrt_wctime_add_duration(ddsrt_wctime_t abstime, dds_duration_t reltime) {
   ddsrt_wctime_t t;
   t.v = ddsrt_time_add_duration (abstime.v, reltime);
   return t;
@@ -231,7 +231,7 @@ inline ddsrt_wctime_t ddsrt_wctime_add_duration(ddsrt_wctime_t abstime, dds_dura
  *
  * @returns A timestamp in nanoseconds since UNIX Epoch.
  */
-inline ddsrt_etime_t ddsrt_etime_add_duration(ddsrt_etime_t abstime, dds_duration_t reltime) {
+DDS_INLINE_EXPORT inline ddsrt_etime_t ddsrt_etime_add_duration(ddsrt_etime_t abstime, dds_duration_t reltime) {
   ddsrt_etime_t t;
   t.v = ddsrt_time_add_duration (abstime.v, reltime);
   return t;

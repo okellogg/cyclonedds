@@ -1,14 +1,12 @@
-/*
- * Copyright(c) 2006 to 2020 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
 
 #include <stdlib.h>
 #include <string.h>
@@ -148,8 +146,7 @@ static char * get_xml_datetime(dds_time_t t, char * buf, size_t len)
 #else
   (void)gmtime_r(&sec, &tm);
 #endif /* _WIN32 */
-
-  strftime(buf, len, "%FT%TZ", &tm);
+  strftime(buf, len, "%Y-%m-%dT%H:%M:%SZ", &tm);
   return buf;
 }
 

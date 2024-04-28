@@ -382,7 +382,7 @@ int     main
     /* Open input file, "-" means stdin.    */
     if (in_file != NULL && ! str_eq( in_file, "-")) {
         if ((fp_in = fopen( in_file, "r")) == NULL) {
-            mcpp_fprintf( ERR, "Can't open input file \"%s\".\n", in_file);
+            mcpp_fprintf( MCPP_ERR, "Can't open input file \"%s\".\n", in_file);
             errors++;
 #if MCPP_LIB
             goto  fatal_error_exit;
@@ -396,7 +396,7 @@ int     main
     /* Open output file, "-" means stdout.  */
     if (out_file != NULL && ! str_eq( out_file, "-")) {
         if ((fp_out = fopen( out_file, "w")) == NULL) {
-            mcpp_fprintf( ERR, "Can't open output file \"%s\".\n", out_file);
+            mcpp_fprintf( MCPP_ERR, "Can't open output file \"%s\".\n", out_file);
             errors++;
 #if MCPP_LIB
             goto  fatal_error_exit;
@@ -409,7 +409,7 @@ int     main
     if (option_flags.q) {                   /* Redirect diagnostics */
         if ((fp_err = fopen( "mcpp.err", "a")) == NULL) {
             errors++;
-            mcpp_fprintf( OUT, "Can't open \"mcpp.err\"\n");
+            mcpp_fprintf( MCPP_OUT, "Can't open \"mcpp.err\"\n");
 #if MCPP_LIB
             goto  fatal_error_exit;
 #else
@@ -444,17 +444,17 @@ fatal_error_exit:
     clear_symtable();
 #endif
 
-    if (fp_in != stdin)
+    if (fp_in && fp_in != stdin)
         fclose( fp_in);
-    if (fp_out != stdout)
+    if (fp_out && fp_out != stdout)
         fclose( fp_out);
-    if (fp_err != stderr)
+    if (fp_err && fp_err != stderr)
         fclose( fp_err);
 
     if (mcpp_debug & MEMORY)
         print_heap();
     if (errors > 0 && option_flags.no_source_line == FALSE) {
-        mcpp_fprintf( ERR, "%d error%s in preprocessor.\n",
+        mcpp_fprintf( MCPP_ERR, "%d error%s in preprocessor.\n",
                 errors, (errors == 1) ? "" : "s");
         return  IO_ERROR;
     }
@@ -667,7 +667,7 @@ static void mcpp_main( void)
                 put_asm();                          /* Put out as it is     */
             } else if (c == '\n') {                 /* Blank line           */
                 if (keep_comments)
-                    mcpp_fputc( '\n', OUT);         /* May flush comments   */
+                    mcpp_fputc( '\n', MCPP_OUT);         /* May flush comments   */
                 else
                     newlines++;                     /* Wait for a token     */
             } else {
@@ -690,12 +690,12 @@ static void mcpp_main( void)
                 sharp( NULL, 0);                    /* Output # line number */
                 if (keep_spaces && src_col) {
                     while (src_col--)               /* Adjust columns       */
-                        mcpp_fputc( ' ', OUT);
+                        mcpp_fputc( ' ', MCPP_OUT);
                     src_col = 0;
                 }
             } else {                                /* If just a few, stuff */
                 while (newlines-- > 0)              /* them out ourselves   */
-                    mcpp_fputc('\n', OUT);
+                    mcpp_fputc('\n', MCPP_OUT);
             }
         }
 
@@ -965,20 +965,23 @@ static void put_a_line(
  */
 {
     size_t  len;
-    char *  out_p;
-    char *  tp;
 
     if (no_output)
         return;
     len = strlen( out);
-    tp = out_p = out + len - 2;             /* Just before '\n'     */
-    while (char_type[ *out_p & UCHARMAX] & SPA)
-        out_p--;                    /* Remove trailing white spaces */
-    if (out_p < tp) {
-        *++out_p = '\n';
-        *++out_p = EOS;
+    if (len > 2)
+    {
+        char *  out_p;
+        char *  tp;
+        tp = out_p = out + len - 2;         /* Just before '\n'     */
+        while (out_p > out && char_type[ *out_p & UCHARMAX] & SPA)
+            out_p--;                /* Remove trailing white spaces */
+        if (out_p < tp && !(char_type[ *out_p & UCHARMAX] & SPA)) {
+            *++out_p = '\n';
+            *++out_p = EOS;
+        }
     }
-    if (mcpp_fputs( out, OUT) == EOF)
+    if (mcpp_fputs( out, MCPP_OUT) == EOF)
         cfatal( "File write error", NULL, 0L, NULL);        /* _F_  */
 }
 

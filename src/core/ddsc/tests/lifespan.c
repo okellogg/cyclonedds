@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2022 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <assert.h>
 #include <limits.h>
 
@@ -16,8 +15,8 @@
 #include "dds/ddsrt/process.h"
 #include "dds/ddsrt/threads.h"
 #include "dds/ddsi/ddsi_entity_index.h"
-#include "dds/ddsi/q_entity.h"
-#include "dds/ddsi/q_whc.h"
+#include "dds/ddsi/ddsi_entity.h"
+#include "ddsi__whc.h"
 #include "dds__entity.h"
 
 #include "test_common.h"
@@ -32,7 +31,7 @@ static dds_entity_t g_waitset     = 0;
 static dds_entity_t g_rcond       = 0;
 static dds_entity_t g_qcond       = 0;
 
-static void lifespan_init(void)
+static void ddsi_lifespan_init(void)
 {
   dds_attach_t triggered;
   dds_return_t ret;
@@ -90,7 +89,7 @@ static void lifespan_init(void)
   dds_delete_qos(qos);
 }
 
-static void lifespan_fini(void)
+static void ddsi_lifespan_fini(void)
 {
   dds_delete(g_rcond);
   dds_delete(g_qcond);
@@ -103,25 +102,24 @@ static void lifespan_fini(void)
   dds_delete(g_participant);
 }
 
-static void check_whc_state(dds_entity_t writer, seqno_t exp_min, seqno_t exp_max)
+static void check_whc_state(dds_entity_t writer, ddsi_seqno_t exp_min, ddsi_seqno_t exp_max)
 {
   struct dds_entity *wr_entity;
-  struct writer *wr;
-  struct whc_state whcst;
+  struct ddsi_writer *wr;
+  struct ddsi_whc_state whcst;
   CU_ASSERT_EQUAL_FATAL(dds_entity_pin(writer, &wr_entity), 0);
-  thread_state_awake(lookup_thread_state(), &wr_entity->m_domain->gv);
-  wr = entidx_lookup_writer_guid(wr_entity->m_domain->gv.entity_index, &wr_entity->m_guid);
+  ddsi_thread_state_awake(ddsi_lookup_thread_state(), &wr_entity->m_domain->gv);
+  wr = ddsi_entidx_lookup_writer_guid (wr_entity->m_domain->gv.entity_index, &wr_entity->m_guid);
   CU_ASSERT_FATAL(wr != NULL);
-  assert(wr != NULL); /* for Clang's static analyzer */
-  whc_get_state(wr->whc, &whcst);
-  thread_state_asleep(lookup_thread_state());
+  ddsi_whc_get_state(wr->whc, &whcst);
+  ddsi_thread_state_asleep(ddsi_lookup_thread_state());
   dds_entity_unpin(wr_entity);
 
   CU_ASSERT_EQUAL_FATAL (whcst.min_seq, exp_min);
   CU_ASSERT_EQUAL_FATAL (whcst.max_seq, exp_max);
 }
 
-CU_Test(ddsc_lifespan, basic, .init=lifespan_init, .fini=lifespan_fini)
+CU_Test(ddsc_lifespan, basic, .init=ddsi_lifespan_init, .fini=ddsi_lifespan_fini)
 {
   Space_Type1 sample = { 0, 0, 0 };
   dds_return_t ret;
@@ -147,7 +145,7 @@ CU_Test(ddsc_lifespan, basic, .init=lifespan_init, .fini=lifespan_fini)
   check_whc_state(g_writer, 2, 2);
 
   dds_sleepfor (2 * exp);
-  check_whc_state(g_writer, -1, -1);
+  check_whc_state(g_writer, 0, 0);
 
   dds_delete_qos(qos);
 }

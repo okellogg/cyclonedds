@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include "dds/dds.h"
 #include "CUnit/Test.h"
 
@@ -131,6 +130,30 @@ CU_Test(ddsc_publisher, create)
   dds_delete_listener(listener);
   dds_delete_qos(qos);
   dds_delete (participant);
+}
+
+CU_Test(ddsc_publisher, invalid_qos)
+{
+  dds_entity_t participant, publisher;
+  dds_qos_t *qos;
+  dds_return_t rc;
+
+  participant = dds_create_participant (DDS_DOMAIN_DEFAULT, NULL, NULL);
+  CU_ASSERT_FATAL(participant >  0);
+
+  qos = dds_create_qos ();
+  CU_ASSERT_NOT_EQUAL_FATAL(qos, NULL);
+
+  // deliberately set an invalid value for the access scope kind, this should
+  // result in create_publisher failing with BAD_PARAMETER
+  dds_qset_presentation(qos, (dds_presentation_access_scope_kind_t)123, false, false);
+
+  publisher = dds_create_publisher(participant, qos, NULL);
+  CU_ASSERT_FATAL(publisher == DDS_RETCODE_BAD_PARAMETER);
+
+  dds_delete_qos (qos);
+  rc = dds_delete(participant);
+  CU_ASSERT_FATAL (rc == 0);
 }
 
 CU_Test(ddsc_publisher, suspend_resume)
@@ -269,6 +292,7 @@ CU_Test(ddsc_publisher, wait_for_acks)
 
 CU_Test(ddsc_publisher, coherency)
 {
+  CU_PASS ("coherency not implemented yet");
   return;
 }
 

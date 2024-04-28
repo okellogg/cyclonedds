@@ -1,21 +1,19 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
-#include "dds/ddsi/ddsi_tcp.h"
-#include "dds/ddsi/ddsi_ssl.h"
-#include "dds/ddsi/q_config.h"
+// Copyright(c) 2006 to 2022 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include "dds/ddsrt/log.h"
 #include "dds/ddsrt/misc.h"
+#include "ddsi__tcp.h"
+#include "ddsi__ssl.h"
 
-#ifdef DDS_HAS_SSL
+#ifdef DDS_HAS_TCP_TLS
 
 #include <assert.h>
 #include <string.h>
@@ -130,52 +128,6 @@ static ssize_t ddsi_ssl_write (SSL *ssl, const void *buf, size_t len, dds_return
 
   return sent;
 }
-
-/* Standard OpenSSL init and thread support routines. See O'Reilly. */
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-static unsigned long ddsi_ssl_id (void)
-{
-  return (unsigned long) ddsrt_gettid ();
-}
-
-typedef struct CRYPTO_dynlock_value {
-  ddsrt_mutex_t m_mutex;
-} CRYPTO_dynlock_value;
-
-static CRYPTO_dynlock_value *ddsi_ssl_locks = NULL;
-
-static void ddsi_ssl_dynlock_lock (int mode, CRYPTO_dynlock_value *lock, const char *file, int line)
-{
-  (void) file;
-  (void) line;
-  if (mode & CRYPTO_LOCK)
-    ddsrt_mutex_lock (&lock->m_mutex);
-  else
-    ddsrt_mutex_unlock (&lock->m_mutex);
-}
-
-static void ddsi_ssl_lock (int mode, int n, const char *file, int line)
-{
-  ddsi_ssl_dynlock_lock (mode, &ddsi_ssl_locks[n], file, line);
-}
-
-static CRYPTO_dynlock_value *ddsi_ssl_dynlock_create (const char *file, int line)
-{
-  (void) file;
-  (void) line;
-  CRYPTO_dynlock_value *val = ddsrt_malloc (sizeof (*val));
-  ddsrt_mutex_init (&val->m_mutex);
-  return val;
-}
-
-static void ddsi_ssl_dynlock_destroy (CRYPTO_dynlock_value *lock, const char *file, int line)
-{
-  (void) file;
-  (void) line;
-  ddsrt_mutex_destroy (&lock->m_mutex);
-  ddsrt_free (lock);
-}
-#endif
 
 static int ddsi_ssl_password (char *buf, int num, int rwflag, void *udata)
 {
@@ -303,7 +255,9 @@ static SSL *ddsi_ssl_connect (const struct ddsi_domaingv *gv, ddsrt_socket_t soc
      record of maintaining backwards compatibility. The SSL API is in the wrong of course ... */
   ssl = ddsi_ssl_new ();
   DDSRT_WARNING_MSVC_OFF(4244);
+  DDSRT_WARNING_GNUC_OFF(conversion);
   SSL_set_fd (ssl, sock);
+  DDSRT_WARNING_GNUC_ON(conversion);
   DDSRT_WARNING_MSVC_ON(4244);
   err = SSL_connect (ssl);
   if (err != 1)
@@ -321,7 +275,9 @@ static BIO *ddsi_ssl_listen (ddsrt_socket_t sock)
   /* See comment in ddsi_ssl_connect concerning casting the socket to an int */
   BIO * bio = BIO_new (BIO_s_accept ());
   DDSRT_WARNING_MSVC_OFF(4244);
+  DDSRT_WARNING_GNUC_OFF(conversion);
   BIO_set_fd (bio, sock, BIO_NOCLOSE);
+  DDSRT_WARNING_GNUC_ON(conversion);
   DDSRT_WARNING_MSVC_ON(4244);
   return bio;
 }
@@ -353,52 +309,21 @@ static SSL *ddsi_ssl_accept (const struct ddsi_domaingv *gv, BIO *bio, ddsrt_soc
 static bool ddsi_ssl_init (struct ddsi_domaingv *gv)
 {
   /* FIXME: allocate this stuff ... don't copy gv into a global variable ... */
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
   ERR_load_BIO_strings ();
+#endif
   SSL_load_error_strings ();
   SSL_library_init ();
   OpenSSL_add_all_algorithms ();
-
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-  {
-    const int locks = CRYPTO_num_locks ();
-    assert (locks >= 0);
-    ddsi_ssl_locks = ddsrt_malloc (sizeof (CRYPTO_dynlock_value) * (size_t) locks);
-    for (int i = 0; i < locks; i++)
-      ddsrt_mutex_init (&ddsi_ssl_locks[i].m_mutex);
-  }
-#endif
-  /* Leave these in place: OpenSSL 1.1 defines them as no-op macros that not even reference the symbol,
-     therefore leaving them in means we get compile time errors if we the library expects the callbacks
-     to be defined and we somehow failed to detect that previously */
-  CRYPTO_set_id_callback (ddsi_ssl_id);
-  CRYPTO_set_locking_callback (ddsi_ssl_lock);
-  CRYPTO_set_dynlock_create_callback (ddsi_ssl_dynlock_create);
-  CRYPTO_set_dynlock_lock_callback (ddsi_ssl_dynlock_lock);
-  CRYPTO_set_dynlock_destroy_callback (ddsi_ssl_dynlock_destroy);
   ddsi_ssl_ctx = ddsi_ssl_ctx_init (gv);
-
   return (ddsi_ssl_ctx != NULL);
 }
 
 static void ddsi_ssl_fini (void)
 {
   SSL_CTX_free (ddsi_ssl_ctx);
-  CRYPTO_set_id_callback (0);
-  CRYPTO_set_locking_callback (0);
-  CRYPTO_set_dynlock_create_callback (0);
-  CRYPTO_set_dynlock_lock_callback (0);
-  CRYPTO_set_dynlock_destroy_callback (0);
   ERR_free_strings ();
   EVP_cleanup ();
-
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-  {
-    const int locks = CRYPTO_num_locks ();
-    for (int i = 0; i < locks; i++)
-      ddsrt_mutex_destroy (&ddsi_ssl_locks[i].m_mutex);
-    ddsrt_free (ddsi_ssl_locks);
-  }
-#endif
 }
 
 void ddsi_ssl_config_plugin (struct ddsi_ssl_plugins *plugin)
@@ -414,4 +339,4 @@ void ddsi_ssl_config_plugin (struct ddsi_ssl_plugins *plugin)
   plugin->accept = ddsi_ssl_accept;
 }
 
-#endif /* DDS_HAS_SSL */
+#endif /* DDS_HAS_TCP_TLS */

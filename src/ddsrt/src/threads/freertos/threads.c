@@ -1,23 +1,22 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2022 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <FreeRTOS.h>
 #include <task.h>
 #include <string.h>
 
+#include "threads_priv.h"
 #include "dds/ddsrt/heap.h"
 #include "dds/ddsrt/retcode.h"
 #include "dds/ddsrt/string.h"
 #include "dds/ddsrt/sync.h"
-#include "dds/ddsrt/threads_priv.h"
 
 typedef enum {
   THREAD_STARTING = 0,
@@ -424,18 +423,20 @@ ddsrt_thread_create(
 }
 
 void
-ddsrt_thread_init(void)
+ddsrt_thread_init(uint32_t reason)
 {
+  (void)reason;
   if (thread_context_require() != DDS_RETCODE_OK) {
     assert(0);
   }
 }
 
 void
-ddsrt_thread_fini(void)
+ddsrt_thread_fini(uint32_t reason)
 {
   thread_context_t *ctx;
 
+  (void)reason;
   /* NO-OP if no context exists since thread-local storage and cleanup
      handler references are both stored in the thread context. */
   if ((ctx = thread_context) != NULL) {

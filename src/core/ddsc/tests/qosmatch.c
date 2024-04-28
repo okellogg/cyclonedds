@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2019 to 2021 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2019 to 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
@@ -21,8 +20,8 @@
 #include "dds/ddsrt/heap.h"
 #include "dds/ddsrt/environ.h"
 #include "dds/ddsrt/log.h"
-
-#include "dds/ddsi/ddsi_xqos.h"
+#include "ddsi__log.h"
+#include "ddsi__xqos.h"
 
 #include "test_common.h"
 #include "RWData.h"
@@ -52,7 +51,7 @@ static void setqos (dds_qos_t *q, size_t i, bool isrd, bool create)
     }
     else
     {
-      char buf[20];
+      char buf[23];
       snprintf (buf, sizeof (buf), "ud%zu%c", i, isrd ? 'r' : 'w');
       dds_qset_userdata (q, buf, strlen (buf));
       snprintf (buf, sizeof (buf), "td%zu", i);
@@ -71,7 +70,7 @@ static void setqos (dds_qos_t *q, size_t i, bool isrd, bool create)
     }
     else
     {
-      char buf[20];
+      char buf[23];
       snprintf (buf, sizeof (buf), "ud%zu%c", i, isrd ? 'r' : 'w');
       dds_qset_userdata (q, buf, strlen (buf));
       snprintf (buf, sizeof (buf), "td%zu", (size_t) 0);
@@ -133,17 +132,24 @@ static void setqos (dds_qos_t *q, size_t i, bool isrd, bool create)
 static bool pubsub_qos_eq_h (const dds_qos_t *a, dds_entity_t ent)
 {
   dds_qos_t *b = dds_create_qos ();
-  dds_get_qos (ent, b);
-  /* internal interface is more luxurious that a simple compare for equality, and
-     using that here saves us a ton of code */
-  uint64_t delta = ddsi_xqos_delta (a, b, QP_GROUP_DATA | QP_PRESENTATION | QP_PARTITION);
-  if (delta)
+  uint64_t delta = 1;
+  struct ddsrt_log_cfg logcfg;
+  dds_log_cfg_init (&logcfg, 0, DDS_LC_ERROR, stderr, stderr);
+  if (dds_get_qos (ent, b) < 0)
   {
-    struct ddsrt_log_cfg logcfg;
-    dds_log_cfg_init (&logcfg, 0, DDS_LC_ERROR, stderr, stderr);
-    DDS_CLOG (DDS_LC_ERROR, &logcfg, "pub/sub: delta = %"PRIx64"\n", delta);
-    ddsi_xqos_log (DDS_LC_ERROR, &logcfg, a); DDS_CLOG (DDS_LC_ERROR, &logcfg, "\n");
-    ddsi_xqos_log (DDS_LC_ERROR, &logcfg, b); DDS_CLOG (DDS_LC_ERROR, &logcfg, "\n");
+    DDS_CLOG (DDS_LC_ERROR, &logcfg, "publisher/subscriber qos retrieval failure\n");
+  }
+  else
+  {
+    /* internal interface is more luxurious that a simple compare for equality, and
+       using that here saves us a ton of code */
+    delta = ddsi_xqos_delta (a, b, DDSI_QP_GROUP_DATA | DDSI_QP_PRESENTATION | DDSI_QP_PARTITION);
+    if (delta)
+    {
+      DDS_CLOG (DDS_LC_ERROR, &logcfg, "pub/sub: delta = %"PRIx64"\n", delta);
+      ddsi_xqos_log (DDS_LC_ERROR, &logcfg, a); DDS_CLOG (DDS_LC_ERROR, &logcfg, "\n");
+      ddsi_xqos_log (DDS_LC_ERROR, &logcfg, b); DDS_CLOG (DDS_LC_ERROR, &logcfg, "\n");
+    }
   }
   dds_delete_qos (b);
   return delta == 0;
@@ -151,21 +157,28 @@ static bool pubsub_qos_eq_h (const dds_qos_t *a, dds_entity_t ent)
 
 static uint64_t reader_qos_delta (const dds_qos_t *a, const dds_qos_t *b)
 {
-  return ddsi_xqos_delta (a, b, QP_USER_DATA | QP_TOPIC_DATA | QP_GROUP_DATA | QP_DURABILITY | QP_HISTORY | QP_RESOURCE_LIMITS | QP_PRESENTATION | QP_DEADLINE | QP_LATENCY_BUDGET | QP_OWNERSHIP | QP_LIVELINESS | QP_TIME_BASED_FILTER | QP_PARTITION | QP_RELIABILITY | QP_DESTINATION_ORDER | QP_ADLINK_READER_DATA_LIFECYCLE);
+  return ddsi_xqos_delta (a, b, DDSI_QP_USER_DATA | DDSI_QP_TOPIC_DATA | DDSI_QP_GROUP_DATA | DDSI_QP_DURABILITY | DDSI_QP_HISTORY | DDSI_QP_RESOURCE_LIMITS | DDSI_QP_PRESENTATION | DDSI_QP_DEADLINE | DDSI_QP_LATENCY_BUDGET | DDSI_QP_OWNERSHIP | DDSI_QP_LIVELINESS | DDSI_QP_TIME_BASED_FILTER | DDSI_QP_PARTITION | DDSI_QP_RELIABILITY | DDSI_QP_DESTINATION_ORDER | DDSI_QP_ADLINK_READER_DATA_LIFECYCLE);
 }
 
 static bool reader_qos_eq_h (const dds_qos_t *a, dds_entity_t ent)
 {
   dds_qos_t *b = dds_create_qos ();
-  dds_get_qos (ent, b);
-  uint64_t delta = reader_qos_delta (a, b);
-  if (delta)
+  uint64_t delta = 1;
+  struct ddsrt_log_cfg logcfg;
+  dds_log_cfg_init (&logcfg, 0, DDS_LC_ERROR, stderr, stderr);
+  if (dds_get_qos (ent, b) < 0)
   {
-    struct ddsrt_log_cfg logcfg;
-    dds_log_cfg_init (&logcfg, 0, DDS_LC_ERROR, stderr, stderr);
-    DDS_CLOG (DDS_LC_ERROR, &logcfg, "reader: delta = %"PRIx64"\n", delta);
-    ddsi_xqos_log (DDS_LC_ERROR, &logcfg, a); DDS_CLOG (DDS_LC_ERROR, &logcfg, "\n");
-    ddsi_xqos_log (DDS_LC_ERROR, &logcfg, b); DDS_CLOG (DDS_LC_ERROR, &logcfg, "\n");
+    DDS_CLOG (DDS_LC_ERROR, &logcfg, "reader qos retrieval failure\n");
+  }
+  else
+  {
+    delta = reader_qos_delta (a, b);
+    if (delta)
+    {
+      DDS_CLOG (DDS_LC_ERROR, &logcfg, "reader: delta = %"PRIx64"\n", delta);
+      ddsi_xqos_log (DDS_LC_ERROR, &logcfg, a); DDS_CLOG (DDS_LC_ERROR, &logcfg, "\n");
+      ddsi_xqos_log (DDS_LC_ERROR, &logcfg, b); DDS_CLOG (DDS_LC_ERROR, &logcfg, "\n");
+    }
   }
   dds_delete_qos (b);
   return delta == 0;
@@ -173,21 +186,28 @@ static bool reader_qos_eq_h (const dds_qos_t *a, dds_entity_t ent)
 
 static uint64_t writer_qos_delta (const dds_qos_t *a, const dds_qos_t *b)
 {
-  return ddsi_xqos_delta (a, b, QP_USER_DATA | QP_TOPIC_DATA | QP_GROUP_DATA | QP_DURABILITY | QP_HISTORY | QP_RESOURCE_LIMITS | QP_PRESENTATION | QP_LIFESPAN | QP_DEADLINE | QP_LATENCY_BUDGET | QP_OWNERSHIP | QP_OWNERSHIP_STRENGTH | QP_LIVELINESS | QP_PARTITION | QP_RELIABILITY | QP_DESTINATION_ORDER | QP_ADLINK_WRITER_DATA_LIFECYCLE);
+  return ddsi_xqos_delta (a, b, DDSI_QP_USER_DATA | DDSI_QP_TOPIC_DATA | DDSI_QP_GROUP_DATA | DDSI_QP_DURABILITY | DDSI_QP_HISTORY | DDSI_QP_RESOURCE_LIMITS | DDSI_QP_PRESENTATION | DDSI_QP_LIFESPAN | DDSI_QP_DEADLINE | DDSI_QP_LATENCY_BUDGET | DDSI_QP_OWNERSHIP | DDSI_QP_OWNERSHIP_STRENGTH | DDSI_QP_LIVELINESS | DDSI_QP_PARTITION | DDSI_QP_RELIABILITY | DDSI_QP_DESTINATION_ORDER | DDSI_QP_ADLINK_WRITER_DATA_LIFECYCLE);
 }
 
 static bool writer_qos_eq_h (const dds_qos_t *a, dds_entity_t ent)
 {
   dds_qos_t *b = dds_create_qos ();
-  dds_get_qos (ent, b);
-  uint64_t delta = writer_qos_delta (a, b);
-  if (delta)
+  uint64_t delta = 1;
+  struct ddsrt_log_cfg logcfg;
+  dds_log_cfg_init (&logcfg, 0, DDS_LC_ERROR, stderr, stderr);
+  if (dds_get_qos (ent, b) < 0)
   {
-    struct ddsrt_log_cfg logcfg;
-    dds_log_cfg_init (&logcfg, 0, DDS_LC_ERROR, stderr, stderr);
-    DDS_CLOG (DDS_LC_ERROR, &logcfg, "writer: delta = %"PRIx64"\n", delta);
-    ddsi_xqos_log (DDS_LC_ERROR, &logcfg, a); DDS_CLOG (DDS_LC_ERROR, &logcfg, "\n");
-    ddsi_xqos_log (DDS_LC_ERROR, &logcfg, b); DDS_CLOG (DDS_LC_ERROR, &logcfg, "\n");
+    DDS_CLOG (DDS_LC_ERROR, &logcfg, "writer qos retrieval failure\n");
+  }
+  else
+  {
+    delta = writer_qos_delta (a, b);
+    if (delta)
+    {
+      DDS_CLOG (DDS_LC_ERROR, &logcfg, "writer: delta = %"PRIx64"\n", delta);
+      ddsi_xqos_log (DDS_LC_ERROR, &logcfg, a); DDS_CLOG (DDS_LC_ERROR, &logcfg, "\n");
+      ddsi_xqos_log (DDS_LC_ERROR, &logcfg, b); DDS_CLOG (DDS_LC_ERROR, &logcfg, "\n");
+    }
   }
   dds_delete_qos (b);
   return delta == 0;
@@ -249,12 +269,12 @@ static uint32_t pub_thread (void *varg)
     {
       for (size_t j = 0; j < NWR_PUB; j++)
       {
-        if (chk[i][j])
-          continue;
         dds_instance_handle_t ih;
         dds_builtintopic_endpoint_t *ep;
         rc = dds_get_matched_subscriptions (wr[i][j], &ih, 1);
         CU_ASSERT_FATAL (rc == 0 || rc == 1);
+        if (chk[i][j])
+          continue;
         if (rc == 1)
         {
           ep = dds_get_matched_subscription_data (wr[i][j], ih);
@@ -391,12 +411,12 @@ static uint32_t sub_thread (void *varg)
     {
       for (size_t j = 0; j < NWR_PUB; j++)
       {
-        if (chk[i][j])
-          continue;
         dds_instance_handle_t ih;
         dds_builtintopic_endpoint_t *ep;
         rc = dds_get_matched_publications (rd[i][j], &ih, 1);
         CU_ASSERT_FATAL (rc == 0 || rc == 1);
+        if (chk[i][j])
+          continue;
         if (rc == 1)
         {
           ep = dds_get_matched_publication_data (rd[i][j], ih);

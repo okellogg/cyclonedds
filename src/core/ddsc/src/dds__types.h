@@ -1,26 +1,32 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
-#ifndef _DDS_TYPES_H_
-#define _DDS_TYPES_H_
+// Copyright(c) 2006 to 2022 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
+#ifndef DDS__TYPES_H
+#define DDS__TYPES_H
 
 /* DDS internal type definitions */
 
 #include "dds/dds.h"
 #include "dds/ddsrt/sync.h"
-#include "dds/ddsi/q_rtps.h"
+#include "dds/ddsrt/dynlib.h"
+#include "dds/ddsi/ddsi_protocol.h"
 #include "dds/ddsi/ddsi_domaingv.h"
+#ifdef DDS_HAS_TOPIC_DISCOVERY
+#include "dds/ddsi/ddsi_typewrap.h"
+#endif
 #include "dds/ddsrt/avl.h"
 #include "dds/ddsi/ddsi_builtin_topic_if.h"
+#include "dds/ddsc/dds_psmx.h"
 #include "dds__handles.h"
+#include "dds__loaned_sample.h"
+
 
 #if defined (__cplusplus)
 extern "C" {
@@ -38,6 +44,7 @@ struct dds_ktopic;
 struct dds_readcond;
 struct dds_guardcond;
 struct dds_statuscond;
+struct dds_loan_pool;
 
 struct ddsi_sertype;
 struct ddsi_rhc;
@@ -61,6 +68,7 @@ typedef bool (*dds_querycondition_filter_with_ctx_fn) (const void * sample, cons
 
 struct dds_listener {
   uint32_t inherited;
+  uint32_t reset_on_invoke;
   dds_on_inconsistent_topic_fn on_inconsistent_topic;
   void *on_inconsistent_topic_arg;
   dds_on_liveliness_lost_fn on_liveliness_lost;
@@ -108,6 +116,10 @@ typedef struct dds_entity_deriver {
   dds_return_t (*validate_status) (uint32_t mask);
   struct dds_statistics * (*create_statistics) (const struct dds_entity *e);
   void (*refresh_statistics) (const struct dds_entity *e, struct dds_statistics *s);
+  /// Invoke listeners for which the corresponding event flag is set in the status mask
+  /// @note expects `e->m_observers_lock` to be held on entry
+  /// @note may unlock and re-lock `e->m_observers_lock`
+  void (*invoke_cbs_for_pending_events) (struct dds_entity *e, uint32_t status);
 } dds_entity_deriver;
 
 struct dds_waitset;
@@ -147,7 +159,7 @@ typedef struct dds_entity {
   ddsrt_cond_t m_cond;
 
   union {
-    status_and_enabled_t m_status_and_mask; /* for most entities */
+    status_and_enabled_t m_status_and_mask; /* for most entities; readers use DATA_ON_READERS in mask in a weird way */
     ddsrt_atomic_uint32_t m_trigger;        /* for conditions & waitsets */
   } m_status;
 
@@ -175,40 +187,78 @@ extern const struct dds_entity_deriver dds_entity_deriver_domain;
 extern const struct dds_entity_deriver dds_entity_deriver_cyclonedds;
 extern const struct dds_entity_deriver *dds_entity_deriver_table[];
 
+/** @notincomponent */
 void dds_entity_deriver_dummy_interrupt (struct dds_entity *e);
+
+/** @notincomponent */
 void dds_entity_deriver_dummy_close (struct dds_entity *e);
+
+/** @notincomponent */
 dds_return_t dds_entity_deriver_dummy_delete (struct dds_entity *e);
+
+/** @notincomponent */
 dds_return_t dds_entity_deriver_dummy_set_qos (struct dds_entity *e, const dds_qos_t *qos, bool enabled);
+
+/** @notincomponent */
 dds_return_t dds_entity_deriver_dummy_validate_status (uint32_t mask);
+
+/** @notincomponent */
 struct dds_statistics *dds_entity_deriver_dummy_create_statistics (const struct dds_entity *e);
+
+/** @notincomponent */
 void dds_entity_deriver_dummy_refresh_statistics (const struct dds_entity *e, struct dds_statistics *s);
 
+/** @notincomponent */
+void dds_entity_deriver_dummy_invoke_cbs_for_pending_events(struct dds_entity *e, uint32_t status);
+
+/** @component generic_entity */
 inline void dds_entity_deriver_interrupt (struct dds_entity *e) {
   (dds_entity_deriver_table[e->m_kind]->interrupt) (e);
 }
+
+/** @component generic_entity */
 inline void dds_entity_deriver_close (struct dds_entity *e) {
   (dds_entity_deriver_table[e->m_kind]->close) (e);
 }
+
+/** @component generic_entity */
 inline dds_return_t dds_entity_deriver_delete (struct dds_entity *e) {
   return dds_entity_deriver_table[e->m_kind]->delete (e);
 }
+
+/** @component generic_entity */
 inline dds_return_t dds_entity_deriver_set_qos (struct dds_entity *e, const dds_qos_t *qos, bool enabled) {
   return dds_entity_deriver_table[e->m_kind]->set_qos (e, qos, enabled);
 }
+
+/** @component generic_entity */
 inline dds_return_t dds_entity_deriver_validate_status (struct dds_entity *e, uint32_t mask) {
   return dds_entity_deriver_table[e->m_kind]->validate_status (mask);
 }
+
+/** @component generic_entity */
 inline bool dds_entity_supports_set_qos (struct dds_entity *e) {
   return dds_entity_deriver_table[e->m_kind]->set_qos != dds_entity_deriver_dummy_set_qos;
 }
+
+/** @component generic_entity */
 inline bool dds_entity_supports_validate_status (struct dds_entity *e) {
   return dds_entity_deriver_table[e->m_kind]->validate_status != dds_entity_deriver_dummy_validate_status;
 }
+
+/** @component statistics */
 inline struct dds_statistics *dds_entity_deriver_create_statistics (const struct dds_entity *e) {
   return dds_entity_deriver_table[e->m_kind]->create_statistics (e);
 }
+
+/** @component statistics */
 inline void dds_entity_deriver_refresh_statistics (const struct dds_entity *e, struct dds_statistics *s) {
   dds_entity_deriver_table[e->m_kind]->refresh_statistics (e, s);
+}
+
+/** @component entity_listener */
+inline void dds_entity_deriver_invoke_cbs_for_pending_events (struct dds_entity *e, uint32_t status) {
+  dds_entity_deriver_table[e->m_kind]->invoke_cbs_for_pending_events (e, status);
 }
 
 typedef struct dds_cyclonedds_entity {
@@ -221,12 +271,19 @@ typedef struct dds_cyclonedds_entity {
   struct ddsi_threadmon *threadmon;
 } dds_cyclonedds_entity;
 
+struct dds_psmx_set {
+  uint32_t length;
+  struct dds_psmx *instances[DDS_MAX_PSMX_INSTANCES];
+  ddsrt_dynlib_t lib_handles[DDS_MAX_PSMX_INSTANCES];
+};
+
 typedef struct dds_domain {
   struct dds_entity m_entity;
 
   ddsrt_avl_node_t m_node; /* for dds_global.m_domains */
   dds_domainid_t m_id;
-  struct cfgst *cfgst; // NULL if config initializer provided
+
+  struct ddsi_cfgst *cfgst; // NULL if config initializer provided
 
   struct ddsi_sertype *builtin_participant_type;
 #ifdef DDS_HAS_TOPIC_DISCOVERY
@@ -235,20 +292,45 @@ typedef struct dds_domain {
   struct ddsi_sertype *builtin_reader_type;
   struct ddsi_sertype *builtin_writer_type;
 
-  struct local_orphan_writer *builtintopic_writer_participant;
-  struct local_orphan_writer *builtintopic_writer_publications;
-  struct local_orphan_writer *builtintopic_writer_subscriptions;
+  struct ddsi_local_orphan_writer *builtintopic_writer_participant;
+  struct ddsi_local_orphan_writer *builtintopic_writer_publications;
+  struct ddsi_local_orphan_writer *builtintopic_writer_subscriptions;
 #ifdef DDS_HAS_TOPIC_DISCOVERY
-  struct local_orphan_writer *builtintopic_writer_topics;
+  struct ddsi_local_orphan_writer *builtintopic_writer_topics;
 #endif
 
   struct ddsi_builtin_topic_interface btif;
   struct ddsi_domaingv gv;
+
+  /* Transmit side: pool for the serializer & transmit messages */
+  struct dds_serdatapool *serpool;
+
+  struct dds_psmx_set psmx_instances;
 } dds_domain;
 
 typedef struct dds_subscriber {
   struct dds_entity m_entity;
+
+  /* materialize_data_on_readers:
+     - a counter in the least significant 31 bits (MASK)
+     - a flag in the most significant bit (FLAG)
+
+     The counter tracks whether the subscriber's DATA_ON_READERS status needs to be
+     materialized.  The flag is set iff it materialized and all readers have the
+     DATA_ON_READERS bit set in the their status mask.
+
+     The DATA_ON_READERS bit in the readers' status masks signals that they must
+     account for a possible materialized DATA_ON_READERS flag.
+
+     It is an error to have FLAG set in the subscriber while some of its readers do
+     not have DATA_ON_READERS set in their status mask.
+
+     Protected by m_entity.m_observers_lock. */
+  uint32_t materialize_data_on_readers;
 } dds_subscriber;
+
+#define DDS_SUB_MATERIALIZE_DATA_ON_READERS_MASK 0x7fffffffu
+#define DDS_SUB_MATERIALIZE_DATA_ON_READERS_FLAG 0x80000000u
 
 typedef struct dds_publisher {
   struct dds_entity m_entity;
@@ -256,17 +338,22 @@ typedef struct dds_publisher {
 
 
 #ifdef DDS_HAS_TOPIC_DISCOVERY
-/* type_id -> <topic guid, ddsi topic> mapping for ktopics */
+/* complete type_id -> <topic guid, ddsi topic> mapping for ktopics */
 struct ktopic_type_guid {
-  type_identifier_t *type_id;
+  ddsi_typeid_t *type_id;
   uint32_t refc;
   ddsi_guid_t guid;
-  struct topic *tp;
+  struct ddsi_topic *tp;
 };
 #endif
 
+struct dds_psmx_topics_set {
+  uint32_t length;
+  struct dds_psmx_topic *topics[DDS_MAX_PSMX_INSTANCES];
+};
+
 typedef struct dds_ktopic {
-  /* name -> <type_name, QoS> mapping for topics, part of the participant
+  /* name -> <QoS> mapping for topics, part of the participant
      and protected by the participant's lock (including the actual QoS
      setting)
 
@@ -278,10 +365,10 @@ typedef struct dds_ktopic {
   uint32_t defer_set_qos; /* set_qos must wait for this to be 0 */
   dds_qos_t *qos;
   char *name; /* [constant] */
-  char *type_name; /* [constant] */
 #ifdef DDS_HAS_TOPIC_DISCOVERY
   struct ddsrt_hh *topic_guid_map; /* mapping of this ktopic to ddsi topics */
 #endif
+  struct dds_psmx_topics_set psmx_topics;
 } dds_ktopic;
 
 typedef struct dds_participant {
@@ -290,19 +377,25 @@ typedef struct dds_participant {
   ddsrt_avl_tree_t m_ktopics; /* [m_entity.m_mutex] */
 } dds_participant;
 
+struct dds_psmx_endpoints_set {
+  uint32_t length;
+  struct dds_psmx_endpoint *endpoints[DDS_MAX_PSMX_INSTANCES];
+};
+
+struct dds_endpoint {
+  struct dds_psmx_endpoints_set psmx_endpoints;
+};
+
 typedef struct dds_reader {
   struct dds_entity m_entity;
+  struct dds_endpoint m_endpoint;
   struct dds_topic *m_topic; /* refc'd, constant, lock(rd) -> lock(tp) allowed */
   struct dds_rhc *m_rhc; /* aliases m_rd->rhc with a wider interface, FIXME: but m_rd owns it for resource management */
-  struct reader *m_rd;
-  bool m_data_on_readers;
-  bool m_loan_out;
-  void *m_loan;
-  uint32_t m_loan_size;
-  unsigned m_wrapped_sertopic : 1; /* set iff reader's topic is a wrapped ddsi_sertopic for backwards compatibility */
+  struct ddsi_reader *m_rd;
+  struct dds_loan_pool *m_loans; /* administration of outstanding loans */
+  struct dds_loan_pool *m_heap_loan_cache;
 
   /* Status metrics */
-
   dds_sample_rejected_status_t m_sample_rejected_status;
   dds_liveliness_changed_status_t m_liveliness_changed_status;
   dds_requested_deadline_missed_status_t m_requested_deadline_missed_status;
@@ -313,11 +406,13 @@ typedef struct dds_reader {
 
 typedef struct dds_writer {
   struct dds_entity m_entity;
+  struct dds_endpoint m_endpoint;
   struct dds_topic *m_topic; /* refc'd, constant, lock(wr) -> lock(tp) allowed */
-  struct nn_xpack *m_xp;
-  struct writer *m_wr;
-  struct whc *m_whc; /* FIXME: ownership still with underlying DDSI writer (cos of DDSI built-in writers )*/
+  struct ddsi_xpack *m_xp;
+  struct ddsi_writer *m_wr;
+  struct ddsi_whc *m_whc; /* FIXME: ownership still with underlying DDSI writer (cos of DDSI built-in writers )*/
   bool whc_batch; /* FIXME: channels + latency budget */
+  struct dds_loan_pool *m_loans; /* administration of associated loans */
 
   /* Status metrics */
 
@@ -374,9 +469,9 @@ typedef struct dds_waitset {
   dds_attachment *entities; /* [wait_lock] 0 .. ntriggered are triggred, ntriggred .. nentities are not */
 } dds_waitset;
 
-DDS_EXPORT extern dds_cyclonedds_entity dds_global;
+extern dds_cyclonedds_entity dds_global;
 
 #if defined (__cplusplus)
 }
 #endif
-#endif
+#endif /* DDS__TYPES_H */

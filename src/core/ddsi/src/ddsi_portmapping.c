@@ -1,20 +1,22 @@
-/*
- * Copyright(c) 2019 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2019 to 2022 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <assert.h>
 #include <inttypes.h>
 
 #include "dds/ddsrt/static_assert.h"
-#include "dds/ddsi/ddsi_portmapping.h"
-#include "dds/ddsi/q_config.h"
+#include "dds/ddsi/ddsi_config.h"
+#include "ddsi__portmapping.h"
+
+// for a static assert on DDSI_TRAN_RANDOM_PORT_NUMBER
+#include "ddsi__tran.h"
 
 static bool get_port_int (uint32_t *port, const struct ddsi_portmapping *map, enum ddsi_port which, uint32_t domain_id, int32_t participant_index, char *str_if_overflow, size_t strsize)
 {
@@ -39,7 +41,7 @@ static bool get_port_int (uint32_t *port, const struct ddsi_portmapping *map, en
       if (participant_index == DDSI_PARTICIPANT_INDEX_NONE)
       {
         /* participant index "none" means unicast ports get chosen by the transport */
-        *port = 0;
+        *port = DDSI_TRAN_RANDOM_PORT_NUMBER;
         return true;
       }
       off = map->d1;
@@ -49,7 +51,7 @@ static bool get_port_int (uint32_t *port, const struct ddsi_portmapping *map, en
       if (participant_index == DDSI_PARTICIPANT_INDEX_NONE)
       {
         /* participant index "none" means unicast ports get chosen by the transport */
-        *port = 0;
+        *port = DDSI_TRAN_RANDOM_PORT_NUMBER;
         return true;
       }
       off = map->d3;
@@ -63,6 +65,7 @@ static bool get_port_int (uint32_t *port, const struct ddsi_portmapping *map, en
   /* For the mapping to be valid, the port number must be in range of an unsigned 32 bit integer and must
      not be 0 (as that is used for indicating a random port should be selected by the transport).  The
      transports may limit this further, but at least we won't have to worry about overflow anymore. */
+  DDSRT_STATIC_ASSERT (DDSI_TRAN_RANDOM_PORT_NUMBER == 0);
   *port = (uint32_t) (a + b);
   if (a <= UINT32_MAX && b <= UINT32_MAX - a && *port > 0)
     return true;
@@ -81,10 +84,10 @@ static bool get_port_int (uint32_t *port, const struct ddsi_portmapping *map, en
 
 static const char *portname (enum ddsi_port which)
 {
-  const char *n = "?";
+  const char *n = "multicast discovery";
   switch (which)
   {
-    case DDSI_PORT_MULTI_DISC: n = "multicast discovery"; break;
+    case DDSI_PORT_MULTI_DISC: break;
     case DDSI_PORT_MULTI_DATA: n = "multicast data"; break;
     case DDSI_PORT_UNI_DISC: n = "unicast discovery"; break;
     case DDSI_PORT_UNI_DATA: n = "unicast data"; break;

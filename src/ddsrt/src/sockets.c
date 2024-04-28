@@ -1,23 +1,22 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2022 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #define _GNU_SOURCE
 
 #include <assert.h>
 #include <stdbool.h>
 #include <string.h>
 
+#include "sockets_priv.h"
 #include "dds/ddsrt/heap.h"
 #include "dds/ddsrt/log.h"
-#include "dds/ddsrt/sockets_priv.h"
 
 #if !LWIP_SOCKET
 # if !defined(_WIN32)
@@ -29,6 +28,10 @@
 #   endif /* __linux */
 # endif /* _WIN32 */
 #endif /* LWIP_SOCKET */
+
+#if defined(__APPLE__) || defined(__FreeBSD__)
+#include <net/if_dl.h>
+#endif
 
 extern inline struct timeval *
 ddsrt_duration_to_timeval_ceil(dds_duration_t reltime, struct timeval *tv);
@@ -42,6 +45,9 @@ const int afs[] = {
 #if defined(__linux) && !LWIP_SOCKET
   AF_PACKET,
 #endif /* __linux */
+#if defined(__APPLE__)
+  AF_LINK,
+#endif
 #if DDSRT_HAVE_IPV6
   AF_INET6,
 #endif /* DDSRT_HAVE_IPV6 */
@@ -67,6 +73,10 @@ ddsrt_sockaddr_get_size(const struct sockaddr *const sa)
 #if defined(__linux) && !LWIP_SOCKET
     case AF_PACKET:
       sz = sizeof(struct sockaddr_ll);
+      break;
+#elif defined(__APPLE__) || defined(__FreeBSD__)
+    case AF_LINK:
+      sz = ((const struct sockaddr_dl *) sa)->sdl_len;
       break;
 #endif /* __linux */
     default:
@@ -233,7 +243,7 @@ DDSRT_WARNING_GNUC_OFF(sign-conversion)
     case AF_INET:
 #if DDSRT_HAVE_INET_NTOP
       ptr = inet_ntop(
-        AF_INET, &((struct sockaddr_in *)sa)->sin_addr, buf, (socklen_t)size);
+        AF_INET, &((struct sockaddr_in *)sa)->sin_addr, buf, (uint32_t)size);
 #else
       {
           in_addr_t x = ntohl(((struct sockaddr_in *)sa)->sin_addr.s_addr);
@@ -245,7 +255,7 @@ DDSRT_WARNING_GNUC_OFF(sign-conversion)
 #if DDSRT_HAVE_IPV6
     case AF_INET6:
       ptr = inet_ntop(
-        AF_INET6, &((struct sockaddr_in6 *)sa)->sin6_addr, buf, (socklen_t)size);
+        AF_INET6, &((struct sockaddr_in6 *)sa)->sin6_addr, buf, (uint32_t)size);
       break;
 #endif
     default:
@@ -263,8 +273,6 @@ DDSRT_WARNING_GNUC_ON(sign-conversion)
 }
 
 #if DDSRT_HAVE_DNS
-#if DDSRT_HAVE_GETADDRINFO
-
 static bool
 is_valid_hostname_char(char c)
 {
@@ -277,6 +285,7 @@ is_valid_hostname_char(char c)
     c == ':';
 }
 
+#if DDSRT_HAVE_GETADDRINFO
 dds_return_t
 ddsrt_gethostbyname(const char *name, int af, ddsrt_hostent_t **hentp)
 {
@@ -383,6 +392,7 @@ ddsrt_gethostbyname(const char *name, int af, ddsrt_hostent_t **hentp)
           memcpy(&hent->addrs[addrno], res->ai_addr, res->ai_addrlen);
         }
       } else {
+        freeaddrinfo(res);
         return DDS_RETCODE_OUT_OF_RESOURCES;
       }
 
@@ -396,7 +406,7 @@ ddsrt_gethostbyname(const char *name, int af, ddsrt_hostent_t **hentp)
   *hentp = hent;
   return DDS_RETCODE_OK;
 }
-#else
+#elif DDSRT_HAVE_GETHOSTBYNAME_R
 dds_return_t
 ddsrt_gethostbyname(const char *name, int af, ddsrt_hostent_t **hentp)
 {
@@ -414,5 +424,25 @@ ddsrt_gethostbyname(const char *name, int af, ddsrt_hostent_t **hentp)
     return DDS_RETCODE_OK;
   }
 }
-#endif /* DDSRT_HAVE_GETADDRINFO */
-#endif /* DDSRT_HAVE_DNS */
+#endif // DDSRT_HAVE_GETADDRINFO
+#endif // DDSRT_HAVE_DNS
+
+dds_return_t
+ddsrt_setsockreuse(ddsrt_socket_t sock, bool reuse)
+{
+  int flags = reuse;
+#ifdef SO_REUSEPORT
+  const dds_return_t rc = ddsrt_setsockopt (sock, SOL_SOCKET, SO_REUSEPORT, &flags, sizeof (flags));
+  switch (rc)
+  {
+    case DDS_RETCODE_UNSUPPORTED:
+      // e.g. LWIP or Zephyr, which defines SO_REUSEPORT but doesn't implement it.
+      //      note that we ignore this error because some systems use SO_REUSEADDR instead
+    case DDS_RETCODE_OK:
+      break;
+    default:
+      return rc;
+  }
+#endif
+  return ddsrt_setsockopt (sock, SOL_SOCKET, SO_REUSEADDR, &flags, sizeof (flags));
+}

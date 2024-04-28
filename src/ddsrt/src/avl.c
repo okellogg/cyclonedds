@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <limits.h>
 #include <assert.h>
 #include <stdint.h>
@@ -56,6 +55,7 @@ static int comparenn (const ddsrt_avl_treedef_t *td, const ddsrt_avl_node_t *a, 
 }
 #endif
 
+#if 0
 static ddsrt_avl_node_t *node_from_onode (const ddsrt_avl_treedef_t *td, char *onode)
 {
     if (onode == NULL) {
@@ -64,6 +64,7 @@ static ddsrt_avl_node_t *node_from_onode (const ddsrt_avl_treedef_t *td, char *o
         return (ddsrt_avl_node_t *) (onode + td->avlnodeoffset);
     }
 }
+#endif
 
 static const ddsrt_avl_node_t *cnode_from_onode (const ddsrt_avl_treedef_t *td, const char *onode)
 {
@@ -90,6 +91,30 @@ static const char *conode_from_node (const ddsrt_avl_treedef_t *td, const ddsrt_
     } else {
         return (const char *) node - td->avlnodeoffset;
     }
+}
+
+static ddsrt_avl_node_t *node_from_onode_nonnull (const ddsrt_avl_treedef_t *td, char *onode) ddsrt_nonnull_all ddsrt_attribute_returns_nonnull;
+static ddsrt_avl_node_t *node_from_onode_nonnull (const ddsrt_avl_treedef_t *td, char *onode)
+{
+  return (ddsrt_avl_node_t *) (onode + td->avlnodeoffset);
+}
+
+static const ddsrt_avl_node_t *cnode_from_onode_nonnull (const ddsrt_avl_treedef_t *td, const char *onode) ddsrt_nonnull_all ddsrt_attribute_returns_nonnull;
+static const ddsrt_avl_node_t *cnode_from_onode_nonnull (const ddsrt_avl_treedef_t *td, const char *onode)
+{
+  return (const ddsrt_avl_node_t *) (onode + td->avlnodeoffset);
+}
+
+static char *onode_from_node_nonnull (const ddsrt_avl_treedef_t *td, ddsrt_avl_node_t *node) ddsrt_nonnull_all ddsrt_attribute_returns_nonnull;
+static char *onode_from_node_nonnull (const ddsrt_avl_treedef_t *td, ddsrt_avl_node_t *node)
+{
+  return (char *) node - td->avlnodeoffset;
+}
+
+static const char *conode_from_node_nonnull (const ddsrt_avl_treedef_t *td, const ddsrt_avl_node_t *node) ddsrt_nonnull_all ddsrt_attribute_returns_nonnull;
+static const char *conode_from_node_nonnull (const ddsrt_avl_treedef_t *td, const ddsrt_avl_node_t *node)
+{
+  return (const char *) node - td->avlnodeoffset;
 }
 
 static void treedef_init_common (ddsrt_avl_treedef_t *td, size_t avlnodeoffset, size_t keyoffset, ddsrt_avl_augment_t augment, uint32_t flags)
@@ -145,7 +170,7 @@ static void treedestroy_arg (const ddsrt_avl_treedef_t *td, ddsrt_avl_node_t *n,
     }
 }
 
-void ddsrt_avl_free (const ddsrt_avl_treedef_t *td, ddsrt_avl_tree_t *tree, void (*freefun) (void *node))
+void ddsrt_avl_free (const ddsrt_avl_treedef_t *td, ddsrt_avl_tree_t *tree, void (*freefun) (void *vnode))
 {
     ddsrt_avl_node_t *n = tree->root;
     tree->root = NULL;
@@ -154,7 +179,7 @@ void ddsrt_avl_free (const ddsrt_avl_treedef_t *td, ddsrt_avl_tree_t *tree, void
     }
 }
 
-void ddsrt_avl_free_arg (const ddsrt_avl_treedef_t *td, ddsrt_avl_tree_t *tree, void (*freefun) (void *node, void *arg), void *arg)
+void ddsrt_avl_free_arg (const ddsrt_avl_treedef_t *td, ddsrt_avl_tree_t *tree, void (*freefun) (void *vnode, void *arg), void *arg)
 {
     ddsrt_avl_node_t *n = tree->root;
     tree->root = NULL;
@@ -163,11 +188,13 @@ void ddsrt_avl_free_arg (const ddsrt_avl_treedef_t *td, ddsrt_avl_tree_t *tree, 
     }
 }
 
+static void augment (const ddsrt_avl_treedef_t *td, ddsrt_avl_node_t *n) ddsrt_nonnull_all;
 static void augment (const ddsrt_avl_treedef_t *td, ddsrt_avl_node_t *n)
 {
-    td->augment (onode_from_node (td, n), conode_from_node (td, n->cs[0]), conode_from_node (td, n->cs[1]));
+    td->augment (onode_from_node_nonnull (td, n), conode_from_node (td, n->cs[0]), conode_from_node (td, n->cs[1]));
 }
 
+static ddsrt_avl_node_t *rotate_single (const ddsrt_avl_treedef_t *td, ddsrt_avl_node_t **pnode, ddsrt_avl_node_t *node, int dir) ddsrt_nonnull_all;
 static ddsrt_avl_node_t *rotate_single (const ddsrt_avl_treedef_t *td, ddsrt_avl_node_t **pnode, ddsrt_avl_node_t *node, int dir)
 {
     /* rotate_single(N, dir) performs one rotation, e.g., for dir=1, a
@@ -200,6 +227,7 @@ static ddsrt_avl_node_t *rotate_single (const ddsrt_avl_treedef_t *td, ddsrt_avl
     return parent;
 }
 
+static ddsrt_avl_node_t *rotate_double (const ddsrt_avl_treedef_t *td, ddsrt_avl_node_t **pnode, ddsrt_avl_node_t *node, int dir) ddsrt_nonnull_all;
 static ddsrt_avl_node_t *rotate_double (const ddsrt_avl_treedef_t *td, ddsrt_avl_node_t **pnode, ddsrt_avl_node_t *node, int dir)
 {
     /* rotate_double() performs one double rotation, which is slightly
@@ -251,6 +279,7 @@ static ddsrt_avl_node_t *rotate_double (const ddsrt_avl_treedef_t *td, ddsrt_avl
     return parent;
 }
 
+static ddsrt_avl_node_t *rotate (const ddsrt_avl_treedef_t *td, ddsrt_avl_node_t **pnode, ddsrt_avl_node_t *node, int dir) ddsrt_nonnull_all;
 static ddsrt_avl_node_t *rotate (const ddsrt_avl_treedef_t *td, ddsrt_avl_node_t **pnode, ddsrt_avl_node_t *node, int dir)
 {
     /* _D => child in the direction of rotation (1 for right, 0 for
@@ -272,6 +301,7 @@ static ddsrt_avl_node_t *rotate (const ddsrt_avl_treedef_t *td, ddsrt_avl_node_t
     }
 }
 
+static ddsrt_avl_node_t *rebalance_one (const ddsrt_avl_treedef_t *td, ddsrt_avl_node_t **pnode, ddsrt_avl_node_t *node) ddsrt_nonnull_all;
 static ddsrt_avl_node_t *rebalance_one (const ddsrt_avl_treedef_t *td, ddsrt_avl_node_t **pnode, ddsrt_avl_node_t *node)
 {
     ddsrt_avl_node_t *node_L = node->cs[0];
@@ -289,7 +319,7 @@ static ddsrt_avl_node_t *rebalance_one (const ddsrt_avl_treedef_t *td, ddsrt_avl
            way up to the root even when not needed for the rebalancing
            itself. */
         int height = (height_L < height_R ? height_R : height_L) + 1;
-        if (td->augment == 0 && height == node->height) {
+        if (td->augment == NULL && height == node->height) {
             return NULL;
         } else {
             node->height = height;
@@ -301,6 +331,7 @@ static ddsrt_avl_node_t *rebalance_one (const ddsrt_avl_treedef_t *td, ddsrt_avl
     }
 }
 
+static ddsrt_avl_node_t **nodeptr_from_node (ddsrt_avl_tree_t *tree, ddsrt_avl_node_t *node) ddsrt_nonnull ((1, 2));
 static void rebalance_path (const ddsrt_avl_treedef_t *td, ddsrt_avl_path_t *path, ddsrt_avl_node_t *node)
 {
     while (node) {
@@ -310,6 +341,7 @@ static void rebalance_path (const ddsrt_avl_treedef_t *td, ddsrt_avl_path_t *pat
     }
 }
 
+static ddsrt_avl_node_t **nodeptr_from_node (ddsrt_avl_tree_t *tree, ddsrt_avl_node_t *node) ddsrt_nonnull_all;
 static ddsrt_avl_node_t **nodeptr_from_node (ddsrt_avl_tree_t *tree, ddsrt_avl_node_t *node)
 {
     ddsrt_avl_node_t *parent = node->parent;
@@ -318,6 +350,7 @@ static ddsrt_avl_node_t **nodeptr_from_node (ddsrt_avl_tree_t *tree, ddsrt_avl_n
         : &parent->cs[1];
 }
 
+static void rebalance_nopath (const ddsrt_avl_treedef_t *td, ddsrt_avl_tree_t *tree, ddsrt_avl_node_t *node) ddsrt_nonnull ((1, 2));
 static void rebalance_nopath (const ddsrt_avl_treedef_t *td, ddsrt_avl_tree_t *tree, ddsrt_avl_node_t *node)
 {
     while (node) {
@@ -337,6 +370,7 @@ void *ddsrt_avl_lookup (const ddsrt_avl_treedef_t *td, const ddsrt_avl_tree_t *t
     return (void *) conode_from_node (td, cursor);
 }
 
+static const ddsrt_avl_node_t *lookup_path (const ddsrt_avl_treedef_t *td, const ddsrt_avl_tree_t *tree, const void *key, ddsrt_avl_path_t *path) ddsrt_nonnull_all;
 static const ddsrt_avl_node_t *lookup_path (const ddsrt_avl_treedef_t *td, const ddsrt_avl_tree_t *tree, const void *key, ddsrt_avl_path_t *path)
 {
     const ddsrt_avl_node_t *cursor = tree->root;
@@ -389,7 +423,7 @@ void *ddsrt_avl_lookup_ipath (const ddsrt_avl_treedef_t *td, const ddsrt_avl_tre
 
 void ddsrt_avl_insert_ipath (const ddsrt_avl_treedef_t *td, ddsrt_avl_tree_t *tree, void *vnode, ddsrt_avl_ipath_t *path)
 {
-    ddsrt_avl_node_t *node = node_from_onode (td, vnode);
+    ddsrt_avl_node_t *node = node_from_onode_nonnull (td, vnode);
     (void) tree;
     node->cs[0] = NULL;
     node->cs[1] = NULL;
@@ -407,7 +441,7 @@ void ddsrt_avl_insert_ipath (const ddsrt_avl_treedef_t *td, ddsrt_avl_tree_t *tr
 
 void ddsrt_avl_insert (const ddsrt_avl_treedef_t *td, ddsrt_avl_tree_t *tree, void *vnode)
 {
-    const void *node = cnode_from_onode (td, vnode);
+    const void *node = cnode_from_onode_nonnull (td, vnode);
     const void *key;
     ddsrt_avl_ipath_t path;
     if (td->flags & DDSRT_AVL_TREEDEF_FLAG_INDKEY) {
@@ -419,9 +453,10 @@ void ddsrt_avl_insert (const ddsrt_avl_treedef_t *td, ddsrt_avl_tree_t *tree, vo
     ddsrt_avl_insert_ipath (td, tree, vnode, &path);
 }
 
+static void delete_generic (const ddsrt_avl_treedef_t *td, ddsrt_avl_tree_t *tree, void *vnode, ddsrt_avl_dpath_t *path) ddsrt_nonnull ((1, 3));
 static void delete_generic (const ddsrt_avl_treedef_t *td, ddsrt_avl_tree_t *tree, void *vnode, ddsrt_avl_dpath_t *path)
 {
-    ddsrt_avl_node_t *node = node_from_onode (td, vnode);
+    ddsrt_avl_node_t *node = node_from_onode_nonnull (td, vnode);
     ddsrt_avl_node_t **pnode;
     ddsrt_avl_node_t *whence;
 
@@ -429,6 +464,7 @@ static void delete_generic (const ddsrt_avl_treedef_t *td, ddsrt_avl_tree_t *tre
         assert (tree == NULL);
         pnode = path->p.pnode[path->p.pnodeidx];
     } else {
+        assert (tree != NULL);
         pnode = nodeptr_from_node (tree, node);
     }
 
@@ -474,9 +510,8 @@ static void delete_generic (const ddsrt_avl_treedef_t *td, ddsrt_avl_tree_t *tre
                 whence->cs[1]->parent = whence;
             }
             subst->cs[0] = node->cs[0];
-            if (subst->cs[0]) {
-                subst->cs[0]->parent = subst;
-            }
+            assert(subst->cs[0] != NULL);
+            subst->cs[0]->parent = subst;
             if (path) {
                 path->p.pnode[path->p.pnodeidx+1] = &subst->cs[0];
             }
@@ -485,9 +520,8 @@ static void delete_generic (const ddsrt_avl_treedef_t *td, ddsrt_avl_tree_t *tre
         subst->parent = node->parent;
         subst->height = node->height;
         subst->cs[1] = node->cs[1];
-        if (subst->cs[1]) {
-            subst->cs[1]->parent = subst;
-        }
+        assert(subst->cs[1] != NULL);
+        subst->cs[1]->parent = subst;
         *pnode = subst;
     }
 
@@ -513,10 +547,10 @@ void ddsrt_avl_delete (const ddsrt_avl_treedef_t *td, ddsrt_avl_tree_t *tree, vo
     delete_generic (td, tree, vnode, NULL);
 }
 
-void ddsrt_avl_swap_node (const ddsrt_avl_treedef_t *td, ddsrt_avl_tree_t *tree, void *vold, void *vnew)
+void ddsrt_avl_swap_node (const ddsrt_avl_treedef_t *td, ddsrt_avl_tree_t *tree, void *voldn, void *vnewn)
 {
-    ddsrt_avl_node_t *old = node_from_onode (td, vold);
-    ddsrt_avl_node_t *new = node_from_onode (td, vnew);
+    ddsrt_avl_node_t *old = node_from_onode_nonnull (td, voldn);
+    ddsrt_avl_node_t *new = node_from_onode_nonnull (td, vnewn);
     *nodeptr_from_node (tree, old) = new;
     /* use memmove so partially overlap between old & new is allowed
        (yikes!, but exploited by the memory allocator, and not a big
@@ -646,7 +680,7 @@ void ddsrt_avl_walk (const ddsrt_avl_treedef_t *td, ddsrt_avl_tree_t *tree, ddsr
            and the parent of N */
         do {
             right = (*todop)->cs[1];
-            f ((void *) conode_from_node (td, *todop), a);
+            f ((void *) conode_from_node_nonnull (td, *todop), a);
         } while (todop-- > todo+1 && right == NULL);
         /* Continue with right subtree rooted at 'right' before processing
            the parent node of the last node processed in the loop above */
@@ -674,7 +708,7 @@ int ddsrt_avl_is_singleton (const ddsrt_avl_tree_t *tree)
 void ddsrt_avl_augment_update (const ddsrt_avl_treedef_t *td, void *vnode)
 {
     if (td->augment) {
-        ddsrt_avl_node_t *node = node_from_onode (td, vnode);
+        ddsrt_avl_node_t *node = node_from_onode_nonnull (td, vnode);
         while (node) {
             augment (td, node);
             node = node->parent;
@@ -705,6 +739,7 @@ static const ddsrt_avl_node_t *fixup_predsucceq (const ddsrt_avl_treedef_t *td, 
     }
 }
 
+static const ddsrt_avl_node_t *lookup_predeq (const ddsrt_avl_treedef_t *td, const ddsrt_avl_tree_t *tree, const void *key) ddsrt_nonnull_all;
 static const ddsrt_avl_node_t *lookup_predeq (const ddsrt_avl_treedef_t *td, const ddsrt_avl_tree_t *tree, const void *key)
 {
     const ddsrt_avl_node_t *tmp = tree->root;
@@ -721,6 +756,7 @@ static const ddsrt_avl_node_t *lookup_predeq (const ddsrt_avl_treedef_t *td, con
     return fixup_predsucceq (td, key, tmp, cand, 0);
 }
 
+static const ddsrt_avl_node_t *lookup_succeq (const ddsrt_avl_treedef_t *td, const ddsrt_avl_tree_t *tree, const void *key) ddsrt_nonnull_all;
 static const ddsrt_avl_node_t *lookup_succeq (const ddsrt_avl_treedef_t *td, const ddsrt_avl_tree_t *tree, const void *key)
 {
     const ddsrt_avl_node_t *tmp = tree->root;
@@ -766,6 +802,7 @@ static const ddsrt_avl_node_t *fixup_predsucc (const ddsrt_avl_treedef_t *td, co
     }
 }
 
+static const ddsrt_avl_node_t *lookup_pred (const ddsrt_avl_treedef_t *td, const ddsrt_avl_tree_t *tree, const void *key) ddsrt_nonnull_all;
 static const ddsrt_avl_node_t *lookup_pred (const ddsrt_avl_treedef_t *td, const ddsrt_avl_tree_t *tree, const void *key)
 {
     const ddsrt_avl_node_t *tmp = tree->root;
@@ -782,6 +819,7 @@ static const ddsrt_avl_node_t *lookup_pred (const ddsrt_avl_treedef_t *td, const
     return fixup_predsucc (td, key, tmp, cand, 0);
 }
 
+static const ddsrt_avl_node_t *lookup_succ (const ddsrt_avl_treedef_t *td, const ddsrt_avl_tree_t *tree, const void *key) ddsrt_nonnull_all;
 static const ddsrt_avl_node_t *lookup_succ (const ddsrt_avl_treedef_t *td, const ddsrt_avl_tree_t *tree, const void *key)
 {
     const ddsrt_avl_node_t *tmp = tree->root;
@@ -905,7 +943,7 @@ void ddsrt_avl_walk_range (const ddsrt_avl_treedef_t *td, ddsrt_avl_tree_t *tree
     n = (ddsrt_avl_node_t *) lookup_succeq (td, tree, min);
     while (n && comparenk (td, n, max) <= 0) {
         nn = find_neighbour (n, 1);
-        f (onode_from_node (td, n), a);
+        f (onode_from_node_nonnull (td, n), a);
         n = nn;
     }
 }
@@ -921,7 +959,7 @@ void ddsrt_avl_walk_range_reverse (const ddsrt_avl_treedef_t *td, ddsrt_avl_tree
     n = (ddsrt_avl_node_t *) lookup_predeq (td, tree, max);
     while (n && comparenk (td, n, min) >= 0) {
         nn = find_neighbour (n, 0);
-        f (onode_from_node (td, n), a);
+        f (onode_from_node_nonnull (td, n), a);
         n = nn;
     }
 }
@@ -939,7 +977,7 @@ void *ddsrt_avl_root (const ddsrt_avl_treedef_t *td, const ddsrt_avl_tree_t *tre
 void *ddsrt_avl_root_non_empty (const ddsrt_avl_treedef_t *td, const ddsrt_avl_tree_t *tree)
 {
     assert (tree->root);
-    return (void *) conode_from_node (td, tree->root);
+    return (void *) conode_from_node_nonnull (td, tree->root);
 }
 
 /**************************************************************************************
@@ -948,15 +986,15 @@ void *ddsrt_avl_root_non_empty (const ddsrt_avl_treedef_t *td, const ddsrt_avl_t
  ****
  **************************************************************************************/
 
-void ddsrt_avl_ctreedef_init (ddsrt_avl_ctreedef_t *td, size_t avlnodeoffset, size_t keyoffset, ddsrt_avl_compare_t comparekk, ddsrt_avl_augment_t augment, uint32_t flags)
+void ddsrt_avl_ctreedef_init (ddsrt_avl_ctreedef_t *td, size_t avlnodeoffset, size_t keyoffset, ddsrt_avl_compare_t comparekk, ddsrt_avl_augment_t avl_augment, uint32_t flags)
 {
-    treedef_init_common (&td->t, avlnodeoffset, keyoffset, augment, flags);
+    treedef_init_common (&td->t, avlnodeoffset, keyoffset, avl_augment, flags);
     td->t.u.comparekk = comparekk;
 }
 
-void ddsrt_avl_ctreedef_init_r (ddsrt_avl_ctreedef_t *td, size_t avlnodeoffset, size_t keyoffset, ddsrt_avl_compare_r_t comparekk_r, void *cmp_arg, ddsrt_avl_augment_t augment, uint32_t flags)
+void ddsrt_avl_ctreedef_init_r (ddsrt_avl_ctreedef_t *td, size_t avlnodeoffset, size_t keyoffset, ddsrt_avl_compare_r_t comparekk_r, void *cmp_arg, ddsrt_avl_augment_t avl_augment, uint32_t flags)
 {
-    treedef_init_common (&td->t, avlnodeoffset, keyoffset, augment, flags | DDSRT_AVL_TREEDEF_FLAG_R);
+    treedef_init_common (&td->t, avlnodeoffset, keyoffset, avl_augment, flags | DDSRT_AVL_TREEDEF_FLAG_R);
     td->t.cmp_arg = cmp_arg;
     td->t.u.comparekk_r = comparekk_r;
 }
@@ -967,13 +1005,13 @@ void ddsrt_avl_cinit (const ddsrt_avl_ctreedef_t *td, ddsrt_avl_ctree_t *tree)
     tree->count = 0;
 }
 
-void ddsrt_avl_cfree (const ddsrt_avl_ctreedef_t *td, ddsrt_avl_ctree_t *tree, void (*freefun) (void *node))
+void ddsrt_avl_cfree (const ddsrt_avl_ctreedef_t *td, ddsrt_avl_ctree_t *tree, void (*freefun) (void *vnode))
 {
     tree->count = 0;
     ddsrt_avl_free (&td->t, &tree->t, freefun);
 }
 
-void ddsrt_avl_cfree_arg (const ddsrt_avl_ctreedef_t *td, ddsrt_avl_ctree_t *tree, void (*freefun) (void *node, void *arg), void *arg)
+void ddsrt_avl_cfree_arg (const ddsrt_avl_ctreedef_t *td, ddsrt_avl_ctree_t *tree, void (*freefun) (void *vnode, void *arg), void *arg)
 {
     tree->count = 0;
     ddsrt_avl_free_arg (&td->t, &tree->t, freefun, arg);
@@ -1024,40 +1062,40 @@ void *ddsrt_avl_clookup_succ (const ddsrt_avl_ctreedef_t *td, const ddsrt_avl_ct
     return ddsrt_avl_lookup_succ (&td->t, &tree->t, key);
 }
 
-void ddsrt_avl_cinsert (const ddsrt_avl_ctreedef_t *td, ddsrt_avl_ctree_t *tree, void *node)
+void ddsrt_avl_cinsert (const ddsrt_avl_ctreedef_t *td, ddsrt_avl_ctree_t *tree, void *vnode)
 {
     tree->count++;
-    ddsrt_avl_insert (&td->t, &tree->t, node);
+    ddsrt_avl_insert (&td->t, &tree->t, vnode);
 }
 
-void ddsrt_avl_cdelete (const ddsrt_avl_ctreedef_t *td, ddsrt_avl_ctree_t *tree, void *node)
+void ddsrt_avl_cdelete (const ddsrt_avl_ctreedef_t *td, ddsrt_avl_ctree_t *tree, void *vnode)
 {
     assert (tree->count > 0);
     tree->count--;
-    ddsrt_avl_delete (&td->t, &tree->t, node);
+    ddsrt_avl_delete (&td->t, &tree->t, vnode);
 }
 
-void ddsrt_avl_cinsert_ipath (const ddsrt_avl_ctreedef_t *td, ddsrt_avl_ctree_t *tree, void *node, ddsrt_avl_ipath_t *path)
+void ddsrt_avl_cinsert_ipath (const ddsrt_avl_ctreedef_t *td, ddsrt_avl_ctree_t *tree, void *vnode, ddsrt_avl_ipath_t *path)
 {
     tree->count++;
-    ddsrt_avl_insert_ipath (&td->t, &tree->t, node, path);
+    ddsrt_avl_insert_ipath (&td->t, &tree->t, vnode, path);
 }
 
-void ddsrt_avl_cdelete_dpath (const ddsrt_avl_ctreedef_t *td, ddsrt_avl_ctree_t *tree, void *node, ddsrt_avl_dpath_t *path)
+void ddsrt_avl_cdelete_dpath (const ddsrt_avl_ctreedef_t *td, ddsrt_avl_ctree_t *tree, void *vnode, ddsrt_avl_dpath_t *path)
 {
     assert (tree->count > 0);
     tree->count--;
-    ddsrt_avl_delete_dpath (&td->t, &tree->t, node, path);
+    ddsrt_avl_delete_dpath (&td->t, &tree->t, vnode, path);
 }
 
-void ddsrt_avl_cswap_node (const ddsrt_avl_ctreedef_t *td, ddsrt_avl_ctree_t *tree, void *old, void *new)
+void ddsrt_avl_cswap_node (const ddsrt_avl_ctreedef_t *td, ddsrt_avl_ctree_t *tree, void *voldn, void *vnewn)
 {
-    ddsrt_avl_swap_node (&td->t, &tree->t, old, new);
+    ddsrt_avl_swap_node (&td->t, &tree->t, voldn, vnewn);
 }
 
-void ddsrt_avl_caugment_update (const ddsrt_avl_ctreedef_t *td, void *node)
+void ddsrt_avl_caugment_update (const ddsrt_avl_ctreedef_t *td, void *vnode)
 {
-    ddsrt_avl_augment_update (&td->t, node);
+    ddsrt_avl_augment_update (&td->t, vnode);
 }
 
 int ddsrt_avl_cis_empty (const ddsrt_avl_ctree_t *tree)

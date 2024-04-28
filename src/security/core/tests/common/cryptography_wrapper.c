@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2020 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2021 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <string.h>
 #include <stdio.h>
 #include "CUnit/Test.h"
@@ -21,10 +20,8 @@
 #include "dds/security/dds_security_api.h"
 #include "dds/security/dds_security_api_defs.h"
 #include "dds/security/core/dds_security_utils.h"
+#include "crypto_tokens.h"
 #include "cryptography_wrapper.h"
-
-#define CRYPTO_TOKEN_CLASS_ID "DDS:Crypto:AES_GCM_GMAC"
-#define CRYPTO_TOKEN_PROPERTY_NAME "dds.cryp.keymat"
 
 int32_t init_crypto(const char *argument, void **context, struct ddsi_domaingv *gv);
 int32_t finalize_crypto(void *context);
@@ -145,11 +142,11 @@ static bool check_crypto_tokens(const DDS_Security_DataHolderSeq *tokens)
     for (uint32_t i = 0; result && (i < tokens->_length); i++)
     {
       result = (tokens->_buffer[i].class_id != NULL &&
-        strcmp(CRYPTO_TOKEN_CLASS_ID, tokens->_buffer[i].class_id) == 0 &&
+        strcmp(DDS_CRYPTOTOKEN_CLASS_ID, tokens->_buffer[i].class_id) == 0 &&
         tokens->_buffer[i].binary_properties._length == 1 &&
         tokens->_buffer[i].binary_properties._buffer != NULL &&
         tokens->_buffer[i].binary_properties._buffer[0].name != NULL &&
-        strcmp(CRYPTO_TOKEN_PROPERTY_NAME, tokens->_buffer[i].binary_properties._buffer[0].name) == 0 &&
+        strcmp(DDS_CRYPTOTOKEN_PROP_KEYMAT, tokens->_buffer[i].binary_properties._buffer[0].name) == 0 &&
         tokens->_buffer[i].binary_properties._buffer[0].value._length > 0 &&
         tokens->_buffer[i].binary_properties._buffer[0].value._buffer != NULL);
     }
@@ -936,7 +933,7 @@ static DDS_Security_boolean encode_rtps_message(
   }
 }
 
-static DDS_Security_boolean decode_rtps_message(
+static DDS_Security_boolean decode_rtps_message (
     dds_security_crypto_transform *instance,
     DDS_Security_OctetSeq *plain_buffer,
     const DDS_Security_OctetSeq *encoded_buffer,

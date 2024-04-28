@@ -1,14 +1,13 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2022 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include <assert.h>
 #include <limits.h>
 
@@ -17,8 +16,8 @@
 #include "dds/ddsrt/threads.h"
 #include "dds/ddsrt/environ.h"
 #include "dds/ddsi/ddsi_entity_index.h"
-#include "dds/ddsi/q_entity.h"
-#include "dds/ddsi/q_whc.h"
+#include "dds/ddsi/ddsi_entity.h"
+#include "ddsi__whc.h"
 #include "dds__entity.h"
 
 #include "test_common.h"
@@ -99,36 +98,35 @@ static dds_entity_t create_and_sync_reader(dds_entity_t subscriber, dds_entity_t
   return reader;
 }
 
-static void get_writer_whc_state (dds_entity_t writer, struct whc_state *whcst)
+static void get_writer_whc_state (dds_entity_t writer, struct ddsi_whc_state *whcst)
 {
   struct dds_entity *wr_entity;
-  struct writer *wr;
+  struct ddsi_writer *wr;
   CU_ASSERT_EQUAL_FATAL(dds_entity_pin(writer, &wr_entity), 0);
-  thread_state_awake(lookup_thread_state(), &wr_entity->m_domain->gv);
-  wr = entidx_lookup_writer_guid(wr_entity->m_domain->gv.entity_index, &wr_entity->m_guid);
+  ddsi_thread_state_awake(ddsi_lookup_thread_state(), &wr_entity->m_domain->gv);
+  wr = ddsi_entidx_lookup_writer_guid (wr_entity->m_domain->gv.entity_index, &wr_entity->m_guid);
   CU_ASSERT_FATAL(wr != NULL);
-  assert(wr != NULL); /* for Clang's static analyzer */
-  whc_get_state(wr->whc, whcst);
-  thread_state_asleep(lookup_thread_state());
+  ddsi_whc_get_state(wr->whc, whcst);
+  ddsi_thread_state_asleep(ddsi_lookup_thread_state());
   dds_entity_unpin(wr_entity);
 }
 
-static void check_intermediate_whc_state(dds_entity_t writer, seqno_t exp_min, seqno_t exp_max)
+static void check_intermediate_whc_state(dds_entity_t writer, ddsi_seqno_t exp_min, ddsi_seqno_t exp_max)
 {
-  struct whc_state whcst;
+  struct ddsi_whc_state whcst;
   get_writer_whc_state (writer, &whcst);
   /* WHC must not contain any samples < exp_min and must contain at least exp_max if it
      contains at least one sample.  (We never know for certain when ACKs arrive.) */
-  printf(" -- intermediate state: unacked: %zu; min %"PRId64" (exp %"PRId64"); max %"PRId64" (exp %"PRId64")\n", whcst.unacked_bytes, whcst.min_seq, exp_min, whcst.max_seq, exp_max);
-  CU_ASSERT_FATAL (whcst.min_seq >= exp_min || (whcst.min_seq == -1 && whcst.max_seq == -1));
-  CU_ASSERT_FATAL (whcst.max_seq == exp_max || (whcst.min_seq == -1 && whcst.max_seq == -1));
+  printf(" -- intermediate state: unacked: %zu; min %"PRIu64" (exp %"PRIu64"); max %"PRIu64" (exp %"PRIu64")\n", whcst.unacked_bytes, whcst.min_seq, exp_min, whcst.max_seq, exp_max);
+  CU_ASSERT_FATAL (whcst.min_seq >= exp_min || (whcst.min_seq == 0 && whcst.max_seq == 0));
+  CU_ASSERT_FATAL (whcst.max_seq == exp_max || (whcst.min_seq == 0 && whcst.max_seq == 0));
 }
 
-static void check_whc_state(dds_entity_t writer, seqno_t exp_min, seqno_t exp_max)
+static void check_whc_state(dds_entity_t writer, ddsi_seqno_t exp_min, ddsi_seqno_t exp_max)
 {
-  struct whc_state whcst;
+  struct ddsi_whc_state whcst;
   get_writer_whc_state (writer, &whcst);
-  printf(" -- final state: unacked: %zu; min %"PRId64" (exp %"PRId64"); max %"PRId64" (exp %"PRId64")\n", whcst.unacked_bytes, whcst.min_seq, exp_min, whcst.max_seq, exp_max);
+  printf(" -- final state: unacked: %zu; min %"PRIu64" (exp %"PRIu64"); max %"PRIu64" (exp %"PRIu64")\n", whcst.unacked_bytes, whcst.min_seq, exp_min, whcst.max_seq, exp_max);
   CU_ASSERT_EQUAL_FATAL (whcst.unacked_bytes, 0);
   CU_ASSERT_EQUAL_FATAL (whcst.min_seq, exp_min);
   CU_ASSERT_EQUAL_FATAL (whcst.max_seq, exp_max);
@@ -175,7 +173,7 @@ static void test_whc_end_state(dds_durability_kind_t d, dds_reliability_kind_t r
   writer = dds_create_writer (g_publisher, topic, g_qos, NULL);
   CU_ASSERT_FATAL(writer > 0);
   ret = dds_set_status_mask(writer, DDS_PUBLICATION_MATCHED_STATUS);
-  CU_ASSERT_FATAL (ret == DDS_RETCODE_OK)
+  CU_ASSERT_FATAL (ret == DDS_RETCODE_OK);
 
   reader = lrd ? create_and_sync_reader (g_subscriber, topic, g_qos, writer) : 0;
   reader_remote = rrd ? create_and_sync_reader (g_remote_subscriber, remote_topic, g_qos, writer) : 0;
@@ -204,11 +202,16 @@ static void test_whc_end_state(dds_durability_kind_t d, dds_reliability_kind_t r
         int32_t depth = (d == V || hd >= dhd) ? hd : dhd;
         int32_t exp_max = ni * (s + 1);
         int32_t exp_min = exp_max - ni * (depth - 1) - (ni - 1);
-        check_intermediate_whc_state (writer, exp_min, exp_max);
+        // exp_min <= 0 can occur with exp_max > 0 (i.e., non-empty, so a non-sensical exp_min)
+        // the check accepts this, treating everything <= 0 the same
+        // change to unsigned means we need to clamp it
+        if (exp_min < 0)
+          exp_min = 0;
+        check_intermediate_whc_state (writer, (uint32_t)exp_min, (uint32_t)exp_max);
       }
       else
       {
-        check_intermediate_whc_state (writer, -1, -1);
+        check_intermediate_whc_state (writer, 0, 0);
       }
     }
   }
@@ -235,9 +238,9 @@ static void test_whc_end_state(dds_durability_kind_t d, dds_reliability_kind_t r
   }
 
   /* check whc state */
-  int32_t exp_max = (d == TL) ? ni * SAMPLE_COUNT : -1;
-  int32_t exp_min = (d == TL) ? ((dh == KA) ? 1 : exp_max - dhd * ni + 1) : -1;
-  check_whc_state (writer, exp_min, exp_max);
+  int32_t exp_max = (d == TL) ? ni * SAMPLE_COUNT : 0;
+  int32_t exp_min = (d == TL) ? ((dh == KA) ? 1 : exp_max - dhd * ni + 1) : 0;
+  check_whc_state (writer, (uint32_t)exp_min, (uint32_t)exp_max);
 
   dds_delete (writer);
   dds_delete (remote_topic);

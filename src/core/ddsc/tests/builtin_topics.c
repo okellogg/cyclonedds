@@ -1,17 +1,19 @@
-/*
- * Copyright(c) 2006 to 2018 ADLINK Technology Limited and others
- *
- * This program and the accompanying materials are made available under the
- * terms of the Eclipse Public License v. 2.0 which is available at
- * http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
- * v. 1.0 which is available at
- * http://www.eclipse.org/org/documents/edl-v10.php.
- *
- * SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
- */
+// Copyright(c) 2006 to 2022 ZettaScale Technology and others
+//
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License v. 2.0 which is available at
+// http://www.eclipse.org/legal/epl-2.0, or the Eclipse Distribution License
+// v. 1.0 which is available at
+// http://www.eclipse.org/org/documents/edl-v10.php.
+//
+// SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+
 #include "dds/dds.h"
+#include "dds/ddsrt/environ.h"
+#include "dds__reader.h"
 #include "test_common.h"
 
+static dds_entity_t g_domain      = 0;
 static dds_entity_t g_participant = 0;
 static dds_entity_t g_subscriber  = 0;
 static dds_entity_t g_publisher   = 0;
@@ -21,46 +23,44 @@ static dds_entity_t g_topic       = 0;
 
 #define MAX_SAMPLES 2
 
-static dds_sample_info_t g_info[MAX_SAMPLES];
-
-static void
-qos_init(void)
+static void setup (void)
 {
+  const char *config = "\
+${CYCLONEDDS_URI}${CYCLONEDDS_URI:+,}\
+<Discovery>\
+  <Tag>\\${CYCLONEDDS_PID}</Tag>\
+</Discovery>";
+  char *conf = ddsrt_expand_envvars (config, 0);
+  g_domain = dds_create_domain (0, conf);
+  CU_ASSERT_FATAL (g_domain > 0);
+  ddsrt_free (conf);
+
+  g_participant = dds_create_participant(0, NULL, NULL);
+  CU_ASSERT_FATAL(g_participant > 0);
+  g_topic = dds_create_topic(g_participant, &RoundTripModule_DataType_desc, "RoundTrip", NULL, NULL);
+  CU_ASSERT_FATAL(g_topic > 0);
+  g_subscriber = dds_create_subscriber(g_participant, NULL, NULL);
+  CU_ASSERT_FATAL(g_subscriber > 0);
+  g_publisher = dds_create_publisher(g_participant, NULL, NULL);
+  CU_ASSERT_FATAL(g_publisher > 0);
+  g_writer = dds_create_writer(g_publisher, g_topic, NULL, NULL);
+  CU_ASSERT_FATAL(g_writer > 0);
+  g_reader = dds_create_reader(g_subscriber, g_topic, NULL, NULL);
+  CU_ASSERT_FATAL(g_reader > 0);
 }
 
-static void
-qos_fini(void)
+static void teardown (void)
 {
+  dds_delete (g_domain);
 }
 
-static void
-setup(void)
-{
-    qos_init();
+enum cdqobe_kind {
+  CDQOBE_READER,
+  CDQOBE_SUBSCRIBER,
+  CDQOBE_TOPIC
+};
 
-    g_participant = dds_create_participant(DDS_DOMAIN_DEFAULT, NULL, NULL);
-    CU_ASSERT_FATAL(g_participant > 0);
-    g_topic = dds_create_topic(g_participant, &RoundTripModule_DataType_desc, "RoundTrip", NULL, NULL);
-    CU_ASSERT_FATAL(g_topic > 0);
-    g_subscriber = dds_create_subscriber(g_participant, NULL, NULL);
-    CU_ASSERT_FATAL(g_subscriber > 0);
-    g_publisher = dds_create_publisher(g_participant, NULL, NULL);
-    CU_ASSERT_FATAL(g_publisher > 0);
-    g_writer = dds_create_writer(g_publisher, g_topic, NULL, NULL);
-    CU_ASSERT_FATAL(g_writer > 0);
-    g_reader = dds_create_reader(g_subscriber, g_topic, NULL, NULL);
-    CU_ASSERT_FATAL(g_reader > 0);
-}
-
-static void
-teardown(void)
-{
-    qos_fini();
-    dds_delete(g_participant);
-}
-
-static void
-check_default_qos_of_builtin_entity(dds_entity_t entity, bool isread)
+static void check_default_qos_of_builtin_entity (dds_entity_t entity, enum cdqobe_kind kind)
 {
   dds_return_t ret;
   int64_t deadline;
@@ -84,8 +84,8 @@ check_default_qos_of_builtin_entity(dds_entity_t entity, bool isread)
   int32_t resource_limits_max_instances;
   int32_t resource_limits_max_samples_per_instance;
 
-  char **partitions;
-  uint32_t plen;
+  char **partitions = NULL;
+  uint32_t plen = 0;
 
   dds_qos_t *qos = dds_create_qos();
   CU_ASSERT_FATAL(qos != NULL);
@@ -93,48 +93,69 @@ check_default_qos_of_builtin_entity(dds_entity_t entity, bool isread)
   ret = dds_get_qos(entity, qos);
   CU_ASSERT_FATAL(ret == DDS_RETCODE_OK);
 
-  dds_qget_durability(qos, &durability_kind);
-  dds_qget_presentation(qos, &presentation_access_scope_kind, &presentation_coherent_access, &presentation_ordered_access);
-  dds_qget_deadline(qos,  &deadline);
-  dds_qget_ownership(qos, &ownership_kind);
-  dds_qget_liveliness(qos, &liveliness_kind, &liveliness_lease_duration);
-  dds_qget_time_based_filter(qos, &minimum_separation);
-  dds_qget_reliability(qos, &reliability_kind, &max_blocking_time);
-  dds_qget_destination_order(qos, &destination_order_kind);
-  dds_qget_history(qos, &history_kind, &history_depth);
-  dds_qget_resource_limits(qos, &resource_limits_max_samples, &resource_limits_max_instances, &resource_limits_max_samples_per_instance);
-  dds_qget_reader_data_lifecycle(qos, &autopurge_nowriter_samples_delay, &autopurge_disposed_samples_delay);
-  dds_qget_partition(qos, &plen, &partitions);
-  // no getter for ENTITY_FACTORY
+  bool x;
+  x = dds_qget_durability(qos, &durability_kind);
+  CU_ASSERT_FATAL(x || kind == CDQOBE_SUBSCRIBER);
+  x = dds_qget_presentation(qos, &presentation_access_scope_kind, &presentation_coherent_access, &presentation_ordered_access);
+  CU_ASSERT_FATAL(x || kind != CDQOBE_READER);
+  x = dds_qget_deadline(qos, &deadline);
+  CU_ASSERT_FATAL(x || kind == CDQOBE_SUBSCRIBER);
+  x = dds_qget_ownership(qos, &ownership_kind);
+  CU_ASSERT_FATAL(x || kind == CDQOBE_SUBSCRIBER);
+  x = dds_qget_liveliness(qos, &liveliness_kind, &liveliness_lease_duration);
+  CU_ASSERT_FATAL(x || kind == CDQOBE_SUBSCRIBER);
+  x = dds_qget_time_based_filter(qos, &minimum_separation);
+  CU_ASSERT_FATAL(x || kind != CDQOBE_READER);
+  x = dds_qget_reliability(qos, &reliability_kind, &max_blocking_time);
+  CU_ASSERT_FATAL(x || kind == CDQOBE_SUBSCRIBER);
+  x = dds_qget_destination_order(qos, &destination_order_kind);
+  CU_ASSERT_FATAL(x || kind == CDQOBE_SUBSCRIBER);
+  x = dds_qget_history(qos, &history_kind, &history_depth);
+  CU_ASSERT_FATAL(x || kind == CDQOBE_SUBSCRIBER);
+  x = dds_qget_resource_limits(qos, &resource_limits_max_samples, &resource_limits_max_instances, &resource_limits_max_samples_per_instance);
+  CU_ASSERT_FATAL(x || kind == CDQOBE_SUBSCRIBER);
+  x = dds_qget_reader_data_lifecycle(qos, &autopurge_nowriter_samples_delay, &autopurge_disposed_samples_delay);
+  CU_ASSERT_FATAL(x || kind != CDQOBE_READER);
+  x = dds_qget_partition(qos, &plen, &partitions);
+  CU_ASSERT_FATAL(x || kind == CDQOBE_TOPIC);
 
-  if (!isread) {
-      CU_ASSERT_FATAL(plen == 1);
-      CU_ASSERT_STRING_EQUAL_FATAL(partitions[0], "__BUILT-IN PARTITION__");
-  } else {
-      CU_ASSERT_FATAL(durability_kind == DDS_DURABILITY_TRANSIENT_LOCAL);
-      CU_ASSERT_FATAL(presentation_access_scope_kind == DDS_PRESENTATION_TOPIC);
-      CU_ASSERT_FATAL(presentation_coherent_access == false);
-      CU_ASSERT_FATAL(presentation_ordered_access == false);
-      CU_ASSERT_FATAL(deadline == DDS_INFINITY);
-      CU_ASSERT_FATAL(ownership_kind == DDS_OWNERSHIP_SHARED);
-      CU_ASSERT_FATAL(liveliness_kind == DDS_LIVELINESS_AUTOMATIC);
-      CU_ASSERT_FATAL(minimum_separation == 0);
-      CU_ASSERT_FATAL(reliability_kind == DDS_RELIABILITY_RELIABLE);
-      CU_ASSERT_FATAL(max_blocking_time == DDS_MSECS(100));
-      CU_ASSERT_FATAL(destination_order_kind == DDS_DESTINATIONORDER_BY_RECEPTION_TIMESTAMP);
-      CU_ASSERT_FATAL(history_kind == DDS_HISTORY_KEEP_LAST);
-      CU_ASSERT_FATAL(history_depth == 1);
-      CU_ASSERT_FATAL(resource_limits_max_instances == DDS_LENGTH_UNLIMITED);
-      CU_ASSERT_FATAL(resource_limits_max_samples == DDS_LENGTH_UNLIMITED);
-      CU_ASSERT_FATAL(resource_limits_max_samples_per_instance == DDS_LENGTH_UNLIMITED);
-      CU_ASSERT_FATAL(autopurge_nowriter_samples_delay == DDS_INFINITY);
-      CU_ASSERT_FATAL(autopurge_disposed_samples_delay == DDS_INFINITY);
+  if (kind == CDQOBE_READER || kind == CDQOBE_TOPIC)
+  {
+    CU_ASSERT_FATAL(durability_kind == DDS_DURABILITY_TRANSIENT_LOCAL);
+    CU_ASSERT_FATAL(deadline == DDS_INFINITY);
+    CU_ASSERT_FATAL(ownership_kind == DDS_OWNERSHIP_SHARED);
+    CU_ASSERT_FATAL(liveliness_kind == DDS_LIVELINESS_AUTOMATIC);
+    CU_ASSERT_FATAL(reliability_kind == DDS_RELIABILITY_RELIABLE);
+    CU_ASSERT_FATAL(max_blocking_time == DDS_MSECS(100));
+    CU_ASSERT_FATAL(destination_order_kind == DDS_DESTINATIONORDER_BY_RECEPTION_TIMESTAMP);
+    CU_ASSERT_FATAL(history_kind == DDS_HISTORY_KEEP_LAST);
+    CU_ASSERT_FATAL(history_depth == 1);
+    CU_ASSERT_FATAL(resource_limits_max_instances == DDS_LENGTH_UNLIMITED);
+    CU_ASSERT_FATAL(resource_limits_max_samples == DDS_LENGTH_UNLIMITED);
+    CU_ASSERT_FATAL(resource_limits_max_samples_per_instance == DDS_LENGTH_UNLIMITED);
   }
+
+  if (kind == CDQOBE_READER || kind == CDQOBE_SUBSCRIBER)
+  {
+    CU_ASSERT_FATAL(presentation_access_scope_kind == DDS_PRESENTATION_TOPIC);
+    CU_ASSERT_FATAL(presentation_coherent_access == false);
+    CU_ASSERT_FATAL(presentation_ordered_access == false);
+    CU_ASSERT_FATAL(plen == 1);
+    CU_ASSERT_STRING_EQUAL_FATAL(partitions[0], "__BUILT-IN PARTITION__");
+  }
+
+  if (kind == CDQOBE_READER)
+  {
+    CU_ASSERT_FATAL(minimum_separation == 0);
+    CU_ASSERT_FATAL(autopurge_nowriter_samples_delay == DDS_INFINITY);
+    CU_ASSERT_FATAL(autopurge_disposed_samples_delay == DDS_INFINITY);
+  }
+
   if (plen > 0) {
-      for (uint32_t i = 0; i < plen; i++) {
-          dds_free(partitions[i]);
-      }
-      dds_free(partitions);
+    for (uint32_t i = 0; i < plen; i++) {
+      dds_free(partitions[i]);
+    }
+    dds_free(partitions);
   }
   dds_delete_qos(qos);
 }
@@ -143,13 +164,13 @@ CU_Test(ddsc_builtin_topics, availability_builtin_topics, .init = setup, .fini =
 {
   dds_entity_t topic;
 
-  topic = dds_find_topic_scoped (DDS_FIND_SCOPE_PARTICIPANT, g_participant, "DCPSParticipant", 0);
+  topic = dds_find_topic (DDS_FIND_SCOPE_PARTICIPANT, g_participant, "DCPSParticipant", NULL, 0);
   CU_ASSERT_EQUAL_FATAL (topic, 0);
-  topic = dds_find_topic_scoped (DDS_FIND_SCOPE_PARTICIPANT, g_participant, "DCPSTopic", 0);
+  topic = dds_find_topic (DDS_FIND_SCOPE_PARTICIPANT, g_participant, "DCPSTopic", NULL, 0);
   CU_ASSERT_EQUAL_FATAL (topic, 0);
-  topic = dds_find_topic_scoped (DDS_FIND_SCOPE_PARTICIPANT, g_participant, "DCPSSubscription", 0);
+  topic = dds_find_topic (DDS_FIND_SCOPE_PARTICIPANT, g_participant, "DCPSSubscription", NULL, 0);
   CU_ASSERT_EQUAL_FATAL (topic, 0);
-  topic = dds_find_topic_scoped (DDS_FIND_SCOPE_PARTICIPANT, g_participant, "DCPSPublication", 0);
+  topic = dds_find_topic (DDS_FIND_SCOPE_PARTICIPANT, g_participant, "DCPSPublication", NULL, 0);
   CU_ASSERT_EQUAL_FATAL (topic, 0);
 }
 
@@ -159,12 +180,13 @@ CU_Test(ddsc_builtin_topics, read_publication_data, .init = setup, .fini = teard
   dds_return_t ret;
   dds_builtintopic_endpoint_t *data;
   void *samples[MAX_SAMPLES];
+  dds_sample_info_t info[MAX_SAMPLES];
 
   reader = dds_create_reader(g_participant, DDS_BUILTIN_TOPIC_DCPSPUBLICATION, NULL, NULL);
   CU_ASSERT_FATAL(reader > 0);
 
   samples[0] = NULL;
-  ret = dds_read(reader, samples, g_info, MAX_SAMPLES, MAX_SAMPLES);
+  ret = dds_read(reader, samples, info, MAX_SAMPLES, MAX_SAMPLES);
   data = samples[0];
   CU_ASSERT_FATAL(ret > 0);
   CU_ASSERT_STRING_EQUAL_FATAL(data->topic_name, "RoundTrip");
@@ -176,6 +198,7 @@ CU_Test(ddsc_builtin_topics, read_subscription_data, .init = setup, .fini = tear
   dds_entity_t reader;
   dds_return_t ret;
   void * samples[MAX_SAMPLES];
+  dds_sample_info_t info[MAX_SAMPLES];
   const char *exp[] = { "DCPSSubscription", "RoundTrip" };
   unsigned seen = 0;
   dds_qos_t *qos;
@@ -184,7 +207,7 @@ CU_Test(ddsc_builtin_topics, read_subscription_data, .init = setup, .fini = tear
   CU_ASSERT_FATAL(reader > 0);
 
   samples[0] = NULL;
-  ret = dds_read(reader, samples, g_info, MAX_SAMPLES, MAX_SAMPLES);
+  ret = dds_read(reader, samples, info, MAX_SAMPLES, MAX_SAMPLES);
   CU_ASSERT_FATAL(ret == 2);
   qos = dds_create_qos();
   for (int i = 0; i < ret; i++) {
@@ -209,14 +232,14 @@ CU_Test(ddsc_builtin_topics, read_participant_data, .init = setup, .fini = teard
 {
   dds_entity_t reader;
   dds_return_t ret;
-  //dds_builtintopic_participant_t *data;
   void * samples[MAX_SAMPLES];
+  dds_sample_info_t info[MAX_SAMPLES];
 
   reader = dds_create_reader(g_participant, DDS_BUILTIN_TOPIC_DCPSPARTICIPANT, NULL, NULL);
   CU_ASSERT_FATAL(reader > 0);
 
   samples[0] = NULL;
-  ret = dds_read(reader, samples, g_info, MAX_SAMPLES, MAX_SAMPLES);
+  ret = dds_read(reader, samples, info, MAX_SAMPLES, MAX_SAMPLES);
   CU_ASSERT_FATAL(ret > 0);
   dds_return_loan(reader, samples, ret);
 }
@@ -229,7 +252,8 @@ CU_Test(ddsc_builtin_topics, read_topic_data, .init = setup, .fini = teardown)
   dds_entity_t reader = dds_create_reader(g_participant, DDS_BUILTIN_TOPIC_DCPSTOPIC, NULL, NULL);
   CU_ASSERT_FATAL(reader > 0);
   void * samples[MAX_SAMPLES] = { NULL };
-  dds_return_t ret = dds_read(reader, samples, g_info, MAX_SAMPLES, MAX_SAMPLES);
+  dds_sample_info_t info[MAX_SAMPLES];
+  dds_return_t ret = dds_read(reader, samples, info, MAX_SAMPLES, MAX_SAMPLES);
   CU_ASSERT_FATAL(ret >= 0);
   for (int i = 0; i < ret; i++)
   {
@@ -297,11 +321,11 @@ CU_Test(ddsc_builtin_topics, builtin_qos, .init = setup, .fini = teardown)
 
   dds_sub_rdr = dds_create_reader(g_participant, DDS_BUILTIN_TOPIC_DCPSSUBSCRIPTION, NULL, NULL);
   CU_ASSERT_FATAL(dds_sub_rdr > 0);
-  check_default_qos_of_builtin_entity(dds_sub_rdr, 1);
+  check_default_qos_of_builtin_entity(dds_sub_rdr, CDQOBE_READER);
 
   dds_sub_subscriber = dds_get_parent(dds_sub_rdr);
   CU_ASSERT_FATAL(dds_sub_subscriber > 0);
-  check_default_qos_of_builtin_entity(dds_sub_subscriber, 0);
+  check_default_qos_of_builtin_entity(dds_sub_subscriber, CDQOBE_SUBSCRIBER);
 }
 
 CU_Test(ddsc_builtin_topics, read_nothing)
@@ -334,4 +358,241 @@ CU_Test(ddsc_builtin_topics, read_nothing)
 
   ret = dds_delete (pp);
   CU_ASSERT_FATAL (ret == 0);
+}
+
+static bool querycond_true (const void *sample)
+{
+  (void) sample;
+  return true;
+}
+
+CU_Test(ddsc_builtin_topics, get_topic)
+{
+  static const dds_entity_t tps[] = {
+    DDS_BUILTIN_TOPIC_DCPSPARTICIPANT,
+    DDS_BUILTIN_TOPIC_DCPSTOPIC,
+    DDS_BUILTIN_TOPIC_DCPSPUBLICATION,
+    DDS_BUILTIN_TOPIC_DCPSSUBSCRIPTION,
+    0
+  };
+  const dds_entity_t pp = dds_create_participant (DDS_DOMAIN_DEFAULT, NULL, NULL);
+  CU_ASSERT_FATAL (pp > 0);
+  for (int i = 0; tps[i]; i++)
+  {
+    const dds_entity_t rd = dds_create_reader (pp, tps[i], NULL, NULL);
+#ifdef DDS_HAS_TOPIC_DISCOVERY
+    CU_ASSERT_FATAL (rd > 0);
+#else // expect failure for DCPSTopic if topic discovery isn't enabled, but verify the error code
+    if (tps[i] != DDS_BUILTIN_TOPIC_DCPSTOPIC)
+    {
+      CU_ASSERT_FATAL (rd > 0);
+    }
+    else
+    {
+      CU_ASSERT_FATAL (rd == DDS_RETCODE_UNSUPPORTED);
+      continue;
+    }
+#endif
+    // get_topic must return the pseudo handle
+    {
+      const dds_entity_t rdtp = dds_get_topic (rd);
+      CU_ASSERT_FATAL (rdtp == tps[i]);
+    }
+    // ... also on a read condition
+    {
+      const dds_entity_t rdc = dds_create_readcondition (rd, DDS_ANY_STATE);
+      CU_ASSERT_FATAL (rdc > 0);
+      const dds_entity_t rdctp = dds_get_topic (rdc);
+      CU_ASSERT_FATAL (rdctp == tps[i]);
+    }
+    // ... and on a query condition
+    {
+      const dds_entity_t qc = dds_create_querycondition (rd, DDS_ANY_STATE, querycond_true);
+      CU_ASSERT_FATAL (qc > 0);
+      const dds_entity_t qctp = dds_get_topic (qc);
+      CU_ASSERT_FATAL (qctp == tps[i]);
+    }
+  }
+  dds_return_t rc = dds_delete (pp);
+  CU_ASSERT_FATAL (rc == 0);
+}
+
+CU_Test(ddsc_builtin_topics, get_name)
+{
+  static const struct { dds_entity_t h; const char *n; } tps[] = {
+    { DDS_BUILTIN_TOPIC_DCPSPARTICIPANT, "DCPSParticipant" },
+    { DDS_BUILTIN_TOPIC_DCPSTOPIC, "DCPSTopic" },
+    { DDS_BUILTIN_TOPIC_DCPSPUBLICATION, "DCPSPublication" },
+    { DDS_BUILTIN_TOPIC_DCPSSUBSCRIPTION, "DCPSSubscription" },
+    { 0, NULL }
+  };
+  // pseudo handles always exist and it actually works even in the absence of a domain
+  // not sure whether that's a feature or a bug ...
+  for (int i = 0; tps[i].h; i++)
+  {
+    char buf[100];
+    dds_return_t rc = dds_get_name (tps[i].h, buf, sizeof (buf));
+    CU_ASSERT_FATAL (rc == (dds_return_t) strlen (tps[i].n));
+    CU_ASSERT_FATAL (strcmp (buf, tps[i].n) == 0);
+  }
+}
+
+CU_Test(ddsc_builtin_topics, get_type_name)
+{
+  static const struct { dds_entity_t h; const char *n; } tps[] = {
+    { DDS_BUILTIN_TOPIC_DCPSPARTICIPANT, "org::eclipse::cyclonedds::builtin::DCPSParticipant" },
+    { DDS_BUILTIN_TOPIC_DCPSTOPIC, "org::eclipse::cyclonedds::builtin::DCPSTopic" },
+    { DDS_BUILTIN_TOPIC_DCPSPUBLICATION, "org::eclipse::cyclonedds::builtin::DCPSPublication" },
+    { DDS_BUILTIN_TOPIC_DCPSSUBSCRIPTION, "org::eclipse::cyclonedds::builtin::DCPSSubscription" },
+    { 0, NULL }
+  };
+  // pseudo handles always exist and it actually works even in the absence of a domain
+  // not sure whether that's a feature or a bug ...
+  for (int i = 0; tps[i].h; i++)
+  {
+    char buf[100];
+    dds_return_t rc = dds_get_type_name (tps[i].h, buf, sizeof (buf));
+    CU_ASSERT_FATAL (rc == (dds_return_t) strlen (tps[i].n));
+    CU_ASSERT_FATAL (strcmp (buf, tps[i].n) == 0);
+  }
+}
+
+CU_Test(ddsc_builtin_topics, get_children)
+{
+  static const dds_entity_t tps[] = {
+    DDS_BUILTIN_TOPIC_DCPSPARTICIPANT,
+    DDS_BUILTIN_TOPIC_DCPSTOPIC,
+    DDS_BUILTIN_TOPIC_DCPSPUBLICATION,
+    DDS_BUILTIN_TOPIC_DCPSSUBSCRIPTION,
+    0
+  };
+  const dds_entity_t pp = dds_create_participant (DDS_DOMAIN_DEFAULT, NULL, NULL);
+  CU_ASSERT_FATAL (pp > 0);
+  for (int i = 0; tps[i]; i++)
+  {
+    const dds_entity_t rd = dds_create_reader (pp, tps[i], NULL, NULL);
+#ifdef DDS_HAS_TOPIC_DISCOVERY
+    CU_ASSERT_FATAL (rd > 0);
+#else // expect failure for DCPSTopic if topic discovery isn't enabled, but verify the error code
+    if (tps[i] != DDS_BUILTIN_TOPIC_DCPSTOPIC)
+    {
+      CU_ASSERT_FATAL (rd > 0);
+    }
+    else
+    {
+      CU_ASSERT_FATAL (rd == DDS_RETCODE_UNSUPPORTED);
+      continue;
+    }
+#endif
+  }
+  // get_children on must not return the topics we just created, there should be just one
+  // subscriber in the result
+  dds_entity_t cs[1];
+  const int32_t ncs = dds_get_children (pp, cs, sizeof (cs) / sizeof (cs[0]));
+  CU_ASSERT_FATAL (ncs == 1);
+  dds_return_t rc = dds_delete (pp);
+  CU_ASSERT_FATAL (rc == 0);
+}
+
+CU_Test(ddsc_builtin_topics, cant_use_real_topic)
+{
+  static const dds_entity_t tps[] = {
+    DDS_BUILTIN_TOPIC_DCPSPARTICIPANT,
+    DDS_BUILTIN_TOPIC_DCPSTOPIC,
+    DDS_BUILTIN_TOPIC_DCPSPUBLICATION,
+    DDS_BUILTIN_TOPIC_DCPSSUBSCRIPTION,
+    0
+  };
+  const dds_entity_t pp = dds_create_participant (DDS_DOMAIN_DEFAULT, NULL, NULL);
+  CU_ASSERT_FATAL (pp > 0);
+  for (int i = 0; tps[i]; i++)
+  {
+    const dds_entity_t rd = dds_create_reader (pp, tps[i], NULL, NULL);
+#ifdef DDS_HAS_TOPIC_DISCOVERY
+    CU_ASSERT_FATAL (rd > 0);
+#else // expect failure for DCPSTopic if topic discovery isn't enabled, but verify the error code
+    if (tps[i] != DDS_BUILTIN_TOPIC_DCPSTOPIC)
+    {
+      CU_ASSERT_FATAL (rd > 0);
+    }
+    else
+    {
+      CU_ASSERT_FATAL (rd == DDS_RETCODE_UNSUPPORTED);
+      continue;
+    }
+#endif
+
+    // extract real topic handle by digging underneath the API
+    // as a very efficient alternative to a lucky guess
+    dds_return_t rc;
+    dds_reader *rd_ent = NULL;
+    rc = dds_reader_lock (rd, &rd_ent);
+    CU_ASSERT_FATAL (rc == 0 && rd_ent != NULL);
+    const dds_entity_t real_topic = rd_ent->m_topic->m_entity.m_hdllink.hdl;
+    dds_reader_unlock (rd_ent);
+
+    // can't delete
+    rc = dds_delete (real_topic);
+    CU_ASSERT_FATAL (rc == DDS_RETCODE_BAD_PARAMETER);
+
+    rc = dds_create_reader (pp, real_topic, NULL, NULL);
+    CU_ASSERT_FATAL (rc == DDS_RETCODE_BAD_PARAMETER);
+  }
+  dds_return_t rc = dds_delete (pp);
+  CU_ASSERT_FATAL (rc == 0);
+}
+
+CU_Test(ddsc_builtin_topics, get_qos)
+{
+  static const struct { dds_entity_t h; const char *n; } tps[] = {
+    { DDS_BUILTIN_TOPIC_DCPSPARTICIPANT },
+    { DDS_BUILTIN_TOPIC_DCPSTOPIC },
+    { DDS_BUILTIN_TOPIC_DCPSPUBLICATION },
+    { DDS_BUILTIN_TOPIC_DCPSSUBSCRIPTION },
+    { 0, NULL }
+  };
+  // pseudo handles always exist and it actually works even in the absence of a domain
+  // not sure whether that's a feature or a bug ...
+  for (int i = 0; tps[i].h; i++)
+  {
+    check_default_qos_of_builtin_entity (tps[i].h, CDQOBE_TOPIC);
+  }
+}
+
+CU_Test(ddsc_builtin_topics, get_matched_publication)
+{
+  static const dds_entity_t tps[] = {
+    DDS_BUILTIN_TOPIC_DCPSPARTICIPANT,
+#ifdef DDS_HAS_TOPIC_DISCOVERY
+    DDS_BUILTIN_TOPIC_DCPSTOPIC,
+#endif
+    DDS_BUILTIN_TOPIC_DCPSPUBLICATION,
+    DDS_BUILTIN_TOPIC_DCPSSUBSCRIPTION
+  };
+  static const dds_guid_t zguid;
+  // pseudo handles always exist and it actually works even in the absence of a domain
+  // not sure whether that's a feature or a bug ...
+  const dds_entity_t dp = dds_create_participant (0, NULL, NULL);
+  CU_ASSERT_FATAL (dp > 0);
+  dds_return_t rc;
+  for (size_t i = 0; i < sizeof (tps) / sizeof (tps[0]); i++)
+  {
+    const dds_entity_t rd = dds_create_reader (dp, tps[i], NULL, NULL);
+    CU_ASSERT_FATAL (rd > 0);
+    dds_instance_handle_t wrih;
+    // Application may not create writers, one local orphan writer, no remote writers
+    // Function returns actual number of matches, even if greater than the size of the
+    // output array.
+    rc = dds_get_matched_publications (rd, &wrih, 1);
+    CU_ASSERT_FATAL (rc == 1);
+    dds_builtintopic_endpoint_t *ep = dds_get_matched_publication_data (rd, wrih);
+    CU_ASSERT_FATAL (ep != NULL);
+    CU_ASSERT_FATAL (memcmp (&ep->participant_key, &zguid, sizeof (ep->participant_key)) == 0);
+    CU_ASSERT_FATAL (ep->participant_instance_handle == 0);
+    dds_builtintopic_free_endpoint (ep);
+    rc = dds_delete (rd);
+    CU_ASSERT_FATAL (rc == 0);
+  }
+  rc = dds_delete (dp);
+  CU_ASSERT_FATAL (rc == 0);
 }
