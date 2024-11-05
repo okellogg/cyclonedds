@@ -95,11 +95,45 @@ emit_implicit_sequence(
         "  bool _release;\n"
         "} %2$s;\n\n"
         "#define %2$s__alloc() \\\n"
-        "((%2$s*) dds_alloc (sizeof (%2$s)));\n\n"
+        "((%2$s*) dds_alloc (sizeof (%2$s)))\n\n"
         "#define %2$s_allocbuf(l) \\\n"
-        "((%3$s%4$s %5$s%6$s*%7$s%8$s) dds_alloc ((l) * sizeof (%3$s%4$s%5$s%8$s)))\n"
-        "#endif /* %1$s_DEFINED */\n\n";
+        "((%3$s%4$s %5$s%6$s*%7$s%8$s) dds_alloc ((l) * sizeof (%3$s%4$s%5$s%8$s)))\n";
   if (idl_fprintf(gen->header.handle, fmt, macro, name, type_prefix, type, star, lpar, rpar, dims) < 0)
+    return IDL_RETCODE_NO_MEMORY;
+
+  /* generate function _copy() */
+  if (gen->config.export_macro && idl_fprintf(gen->header.handle, "%1$s ", gen->config.export_macro) < 0)
+    return IDL_RETCODE_NO_MEMORY;
+  fmt = "extern void %1$s_copy(%1$s *d, const %1$s *s);\n\n";
+  if (idl_fprintf(gen->header.handle, fmt, name) < 0)
+    return IDL_RETCODE_NO_MEMORY;
+  fmt = "void %1$s_copy(%1$s *d, const %1$s *s) {\n";
+  if (idl_fprintf(gen->source.handle, fmt, name) < 0)
+    return IDL_RETCODE_NO_MEMORY;
+  fmt = /* "  size_t elemsize = sizeof (%1$s%2$s);\n" */
+        "  %1$s%2$s *dptr = %3$s_allocbuf(s->_maximum);\n"
+        "  const %1$s%2$s *sptr = (const %1$s%2$s *)s->_buffer;\n"
+        "  d->_maximum = s->_maximum;\n"
+        "  d->_length  = s->_length;\n"
+        "  d->_release = true;\n"
+        "  d->_buffer = dptr;\n"
+        "  for (unsigned i = 0; i < s->_length; i++) {\n";
+  if (idl_fprintf(gen->source.handle, fmt, type_prefix, type, name) < 0)
+    return IDL_RETCODE_NO_MEMORY;
+  if (idl_is_scalar_type(type_spec)) {
+    if (idl_fprintf(gen->source.handle, "    *(dptr + i) = *(sptr + i);\n") < 0)
+      return IDL_RETCODE_NO_MEMORY;
+  } else {
+    fmt = "    %1$s_copy(dptr + i, sptr + i);\n";
+    if (idl_fprintf(gen->source.handle, fmt, type) < 0)
+      return IDL_RETCODE_NO_MEMORY;
+  }
+  if (idl_fprintf(gen->source.handle, "  }\n") < 0)
+    return IDL_RETCODE_NO_MEMORY;
+  if (idl_fprintf(gen->source.handle, "}\n\n") < 0)
+    return IDL_RETCODE_NO_MEMORY;
+
+  if (idl_fprintf(gen->header.handle, "#endif /* %1$s_DEFINED */\n\n", macro) < 0)
     return IDL_RETCODE_NO_MEMORY;
 
   return IDL_VISIT_DONT_RECURSE;
@@ -221,6 +255,8 @@ emit_struct(
   char *name = NULL;
   const char *fmt;
   bool empty = idl_is_empty(node);
+  const idl_struct_t *_struct = (const idl_struct_t *)node;
+  idl_member_t *members = _struct->members;
 
   if (IDL_PRINTA(&name, print_type, node) < 0)
     return IDL_RETCODE_NO_MEMORY;
@@ -231,36 +267,158 @@ emit_struct(
       return IDL_RETCODE_NO_MEMORY;
     if (!empty && idl_fprintf(gen->header.handle, "\n") < 0)
       return IDL_RETCODE_NO_MEMORY;
-    if (!empty && idl_is_topic(node, (pstate->config.flags & IDL_FLAG_KEYLIST) != 0)) {
-      if (gen->config.export_macro && idl_fprintf(gen->header.handle, "%1$s ", gen->config.export_macro) < 0)
-        return IDL_RETCODE_NO_MEMORY;
-      fmt = "extern const dds_topic_descriptor_t %1$s_desc;\n"
-            "\n"
-            "#define %1$s__alloc() \\\n"
-            "((%1$s*) dds_alloc (sizeof (%1$s)));\n"
-            "\n"
-            "#define %1$s_free(d,o) \\\n"
-            "dds_sample_free ((d), &%1$s_desc, (o))\n"
+    if (!empty) {
+      fmt = "#define %1$s__alloc() \\\n"
+            "((%1$s*) dds_alloc (sizeof (%1$s)))\n"
             "\n";
       if (idl_fprintf(gen->header.handle, fmt, name) < 0)
         return IDL_RETCODE_NO_MEMORY;
-      if (gen->config.generate_cdrstream_desc)
-      {
+      if (idl_is_topic(node, (pstate->config.flags & IDL_FLAG_KEYLIST) != 0)) {
         if (gen->config.export_macro && idl_fprintf(gen->header.handle, "%1$s ", gen->config.export_macro) < 0)
           return IDL_RETCODE_NO_MEMORY;
-        fmt = "extern const struct dds_cdrstream_desc %1$s_cdrstream_desc;\n\n";
+        fmt = "extern const dds_topic_descriptor_t %1$s_desc;\n\n";
         if (idl_fprintf(gen->header.handle, fmt, name) < 0)
           return IDL_RETCODE_NO_MEMORY;
+        if (gen->config.export_macro && idl_fprintf(gen->header.handle, "%1$s ", gen->config.export_macro) < 0)
+          return IDL_RETCODE_NO_MEMORY;
+        fmt = "extern void %1$s_free(void *d, dds_free_op_t o);\n\n";
+        if (idl_fprintf(gen->header.handle, fmt, name) < 0)
+          return IDL_RETCODE_NO_MEMORY;
+        fmt = "void %1$s_free(void *d, dds_free_op_t o) {\n"
+              "  dds_sample_free ((d), &%1$s_desc, (o));\n"
+              "}\n\n";
+        if (idl_fprintf(gen->source.handle, fmt, name) < 0)
+          return IDL_RETCODE_NO_MEMORY;
+        if (gen->config.generate_cdrstream_desc)
+        {
+          if (gen->config.export_macro && idl_fprintf(gen->header.handle, "%1$s ", gen->config.export_macro) < 0)
+            return IDL_RETCODE_NO_MEMORY;
+          fmt = "extern const struct dds_cdrstream_desc %1$s_cdrstream_desc;\n\n";
+          if (idl_fprintf(gen->header.handle, fmt, name) < 0)
+            return IDL_RETCODE_NO_MEMORY;
+        }
+        if ((ret = generate_descriptor(pstate, gen, node)))
+          return ret;
+      } else {
+        /* generate _free() */
+        if (gen->config.export_macro && idl_fprintf(gen->header.handle, "%1$s ", gen->config.export_macro) < 0)
+          return IDL_RETCODE_NO_MEMORY;
+        fmt = "extern void %1$s_free(void *d);\n\n";
+        if (idl_fprintf(gen->header.handle, fmt, name) < 0)
+          return IDL_RETCODE_NO_MEMORY;
+        fmt = "void %1$s_free(void *d) {\n";
+        if (idl_fprintf(gen->source.handle, fmt, name) < 0)
+          return IDL_RETCODE_NO_MEMORY;
+        if (idl_fprintf(gen->source.handle, "  dds_free(d);\n") < 0)
+          return IDL_RETCODE_NO_MEMORY;
+        if (idl_fprintf(gen->source.handle, "}\n\n") < 0)
+          return IDL_RETCODE_NO_MEMORY;
       }
-      if ((ret = generate_descriptor(pstate, gen, node)))
-        return ret;
+      {
+        /* generate _copy() */
+        idl_member_t *member;
+        if (gen->config.export_macro && idl_fprintf(gen->header.handle, "%1$s ", gen->config.export_macro) < 0)
+          return IDL_RETCODE_NO_MEMORY;
+        fmt = "extern void %1$s_copy(%1$s *d, const %1$s *s);\n\n";
+        if (idl_fprintf(gen->header.handle, fmt, name) < 0)
+          return IDL_RETCODE_NO_MEMORY;
+        fmt = "void %1$s_copy(%1$s *d, const %1$s *s) {\n";
+        if (idl_fprintf(gen->source.handle, fmt, name) < 0)
+          return IDL_RETCODE_NO_MEMORY;
+        IDL_FOREACH(member, members) {
+          bool is_scalar = idl_is_scalar_type(member->type_spec);
+          bool is_string = idl_is_string(member->type_spec);
+          bool is_bounded = idl_is_bounded(member->type_spec);
+          bool is_external = idl_is_external((idl_node_t*)member);
+          bool is_optional = idl_is_optional((idl_node_t*)member); 
+          bool is_pointer = is_external || is_optional;
+          idl_declarator_t *decl;
+          IDL_FOREACH(decl, member->declarators) {
+            const char *declname = decl->name->identifier;
+            unsigned dimindex = 0;
+            char dimbuf[64];   /* buffer for array index syntax */
+            dimbuf[0] = '\0';
+            if (is_pointer) {
+              char *membertype;
+              if (IDL_PRINTA(&membertype, print_type, member->type_spec) < 0)
+                return IDL_RETCODE_NO_MEMORY;
+              fmt = "  if (s->%1$s == NULL) {\n"
+                    "    d->%1$s = NULL;\n"
+                    "  } else {\n"
+                    "    d->%1$s = %2$s__alloc();\n"
+                    "  }\n"
+                    "  if (d->%1$s) {\n";
+              if (idl_fprintf(gen->source.handle, fmt, declname, membertype) < 0)
+                return IDL_RETCODE_NO_MEMORY;
+            }
+            if (decl->const_expr) {
+              for (idl_const_expr_t *ce = decl->const_expr; ce; ce = idl_next(ce)) {
+                idl_literal_t const * const lit = ce;
+                char ndxbuf[16];
+                int res;
+                fmt = "  for (unsigned i%1$u = 0; i%1$u < %2$u; i%1$u++) {\n";
+                if (idl_fprintf(gen->source.handle, fmt, dimindex, lit->value.uint32) < 0)
+                  return IDL_RETCODE_NO_MEMORY;
+                res = snprintf(ndxbuf, sizeof(ndxbuf), "[i%u]", dimindex);
+                if (res < 0 || (size_t)res >= sizeof(ndxbuf))
+                  return IDL_RETCODE_NO_MEMORY;
+                if (strlen(dimbuf) + strlen(ndxbuf) >= sizeof(dimbuf))
+                  return IDL_RETCODE_NO_MEMORY;
+                strcat(dimbuf, ndxbuf);
+                ++dimindex;
+              }
+            }
+            if (is_scalar) {
+              if (is_pointer) {
+                fmt = "  *(d->%1$s%2$s) = *(s->%1$s%2$s);\n";
+              } else {
+                fmt = "  d->%1$s%2$s = s->%1$s%2$s;\n";
+              }
+              if (idl_fprintf(gen->source.handle, fmt, declname, dimbuf) < 0)
+                return IDL_RETCODE_NO_MEMORY;
+            } else if (is_string) {
+              if (is_pointer) {
+                fmt = "  *(d->%1$s%2$s = dds_string_dup(*(s->%1$s%2$s));\n";
+              } else if (is_bounded) {
+                fmt = "  strcpy(d->%1$s%2$s, s->%1$s%2$s);\n";
+              } else {
+                fmt = "  d->%1$s%2$s = dds_string_dup(s->%1$s%2$s);\n";
+              }
+              if (idl_fprintf(gen->source.handle, fmt, declname, dimbuf) < 0)
+                return IDL_RETCODE_NO_MEMORY;
+            } else {
+              char *membertype;
+              if (IDL_PRINTA(&membertype, print_type, member->type_spec) < 0)
+                return IDL_RETCODE_NO_MEMORY;
+              if (is_pointer) {
+                fmt = "  %s_copy(&((*d)->%2$s%3$s), &((*s)->%2$s%3$s));\n";
+              } else {
+                fmt = "  %s_copy(&(d->%2$s%3$s), &(s->%2$s%3$s));\n";
+              }
+              if (idl_fprintf(gen->source.handle, fmt, membertype, declname, dimbuf) < 0)
+                return IDL_RETCODE_NO_MEMORY;
+            }
+            for (unsigned i = 0; i < dimindex; i++) {
+              if (idl_fprintf(gen->source.handle, "  }\n") < 0)
+                return IDL_RETCODE_NO_MEMORY;
+            }
+            if (is_optional) {
+              if (idl_fprintf(gen->source.handle, "  }  /* optional is non NULL */\n") < 0)
+                return IDL_RETCODE_NO_MEMORY;
+            } else if (is_external) {
+              if (idl_fprintf(gen->source.handle, "  }  /* external is non NULL */\n") < 0)
+                return IDL_RETCODE_NO_MEMORY;
+            }
+          }
+        }
+        if (idl_fprintf(gen->source.handle, "}\n\n") < 0)
+          return IDL_RETCODE_NO_MEMORY;
+      }
     }
     if (empty)
       if (idl_fprintf(gen->header.handle, "#endif /* empty struct */\n\n") < 0)
         return IDL_RETCODE_NO_MEMORY;
   } else {
-    const idl_struct_t *_struct = (const idl_struct_t *)node;
-    const idl_member_t *members = _struct->members;
     /* ensure typedefs for unnamed sequences exist beforehand */
     if (members && (ret = generate_implicit_sequences(pstate, revisit, path, members, user_data)))
       return ret;
@@ -324,7 +482,7 @@ emit_union(
       fmt = "extern const dds_topic_descriptor_t %1$s_desc;\n"
             "\n"
             "#define %1$s__alloc() \\\n"
-            "((%1$s*) dds_alloc (sizeof (%1$s)));\n"
+            "((%1$s*) dds_alloc (sizeof (%1$s)))\n"
             "\n"
             "#define %1$s_free(d,o) \\\n"
             "dds_sample_free ((d), &%1$s_desc, (o))\n"
@@ -443,7 +601,7 @@ emit_sequence_typedef(
     }
     fmt = ";\n\n"
           "#define %1$s__alloc() \\\n"
-          "((%1$s*) dds_alloc (sizeof (%1$s)));\n\n"
+          "((%1$s*) dds_alloc (sizeof (%1$s)))\n\n"
           "#define %1$s_allocbuf(l) \\\n"
           "((%2$s%3$s %4$s%5$s*%6$s%7$s) dds_alloc ((l) * sizeof (%2$s%3$s%4$s%7$s)))\n";
     if (idl_fprintf(gen->header.handle, fmt, name, type_prefix, type, star, lpar, rpar, dims) < 0)
@@ -497,7 +655,7 @@ emit_typedef(
     }
     fmt = ";\n\n"
           "#define %1$s__alloc() \\\n"
-          "((%1$s*) dds_alloc (sizeof (%1$s)));\n\n";
+          "((%1$s*) dds_alloc (sizeof (%1$s)))\n\n";
     if (idl_fprintf(gen->header.handle, fmt, name) < 0)
       return IDL_RETCODE_NO_MEMORY;
   }
@@ -545,7 +703,7 @@ emit_enum(
 
   fmt = "\n} %1$s;\n\n"
         "#define %1$s__alloc() \\\n"
-        "((%1$s*) dds_alloc (sizeof (%1$s)));\n\n";
+        "((%1$s*) dds_alloc (sizeof (%1$s)))\n\n";
   if (idl_fprintf(gen->header.handle, fmt, type) < 0)
     return IDL_RETCODE_NO_MEMORY;
 

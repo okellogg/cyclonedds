@@ -159,6 +159,20 @@ DDS_EXPORT void dds_string_free (char * str);
  */
 DDS_EXPORT void dds_sample_free (void * sample, const struct dds_topic_descriptor * desc, dds_free_op_t op);
 
+#define     bool__alloc()  (bool     *)dds_alloc(sizeof(bool))
+#define     char__alloc()  (char     *)dds_alloc(sizeof(char))
+#define    octet__alloc()  (octet    *)dds_alloc(sizeof(octet))
+#define   int8_t__alloc()  (int8_t   *)dds_alloc(sizeof(int8_t))
+#define  uint8_t__alloc()  (uint8_t  *)dds_alloc(sizeof(uint8_t))
+#define  int16_t__alloc()  (int16_t  *)dds_alloc(sizeof(int16_t))
+#define uint16_t__alloc()  (uint16_t *)dds_alloc(sizeof(uint16_t))
+#define  int32_t__alloc()  (int32_t  *)dds_alloc(sizeof(int32_t))
+#define uint32_t__alloc()  (uint32_t *)dds_alloc(sizeof(uint32_t))
+#define  int64_t__alloc()  (int64_t  *)dds_alloc(sizeof(int64_t))
+#define uint64_t__alloc()  (uint64_t *)dds_alloc(sizeof(uint64_t))
+#define    float__alloc()  (float    *)dds_alloc(sizeof(float))
+#define   double__alloc()  (double   *)dds_alloc(sizeof(double))
+
 #if defined (__cplusplus)
 }
 #endif

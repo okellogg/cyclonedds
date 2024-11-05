@@ -25,7 +25,7 @@
    contain the result from an expression, pragmas contain compiler-specific
    instructions that apply to a specific declaration, much like annotations.
    the exact type of a node is stored in the mask property of the base node
-   and is an constructed by combining preprocessor defines. unique bits are
+   and is constructed by combining preprocessor defines. unique bits are
    reserved for categories and properties that generators are likely to filter
    on when applying a visitor pattern. */
 
@@ -522,6 +522,7 @@ IDL_EXPORT bool idl_is_type_spec(const void *node);
 IDL_EXPORT bool idl_is_base_type(const void *node);
 IDL_EXPORT bool idl_is_floating_pt_type(const void *node);
 IDL_EXPORT bool idl_is_integer_type(const void *node);
+IDL_EXPORT bool idl_is_scalar_type(const void *node);
 IDL_EXPORT bool idl_is_templ_type(const void *node);
 IDL_EXPORT bool idl_is_bounded(const void *node);
 IDL_EXPORT bool idl_is_sequence(const void *node);

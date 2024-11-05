@@ -115,6 +115,8 @@ static idl_retcode_t print_includes(FILE *fh, const idl_source_t *source)
       return IDL_RETCODE_NO_MEMORY;
   }
 
+  if (fputs("#include <string.h>\n\n", fh) < 0)
+      return IDL_RETCODE_NO_MEMORY;
   return IDL_RETCODE_OK;
 }
 

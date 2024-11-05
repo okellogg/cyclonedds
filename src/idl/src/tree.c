@@ -760,6 +760,23 @@ bool idl_is_integer_type(const void *node)
   return (idl_mask(node) & IDL_INTEGER_TYPE) != 0;
 }
 
+bool idl_is_scalar_type(const void *node)
+{
+  idl_mask_t mask;
+  if (idl_mask(node) & IDL_DECLARATOR)
+    node = idl_parent(node);
+  mask = idl_mask(node);
+  if (mask & (IDL_BASE_TYPE|IDL_ENUM|IDL_ENUMERATOR|IDL_BITMASK))
+    return (mask != IDL_ANY);
+  if (!(mask & IDL_TYPEDEF))
+    return false;
+  {
+    idl_typedef_t *_typedef = (idl_typedef_t*) node;
+    void *type_spec = idl_unalias(_typedef->type_spec);
+    return idl_is_scalar_type(type_spec);
+  }
+}
+
 static void delete_base_type(void *ptr)
 {
   idl_free(ptr);
